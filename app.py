@@ -102,9 +102,9 @@ def get_stock_data(code, market=None):
     except Exception as e:
         return None, str(e)
 
-def analyze_advanced(df):
-    """초보자를 위한 상세 분석 로직"""
-    # 1. 지표 계산
+def analyze_advanced(df, fund_data):
+    """초보자를 위한 상세 분석 로직 (점수 세분화)"""
+    # 1. 지표 계산 (기존과 동일)
     df['ma5'] = ta.trend.sma_indicator(df['Close'], window=5)
     df['ma20'] = ta.trend.sma_indicator(df['Close'], window=20)
     df['ma60'] = ta.trend.sma_indicator(df['Close'], window=60)
@@ -121,68 +121,102 @@ def analyze_advanced(df):
     df['bb_h'] = bb.bollinger_hband()
     df['bb_l'] = bb.bollinger_lband()
     
-    # 2. 분석 (현재 시점)
+    # 2. 분석 및 점수화 (현재 시점)
     curr = df.iloc[-1]
     prev = df.iloc[-2]
     
-    score = 50
-    report = [] # 상세 리포트 리스트
+    # 4가지 영역별 점수 초기화 (총 100점 만점)
+    trend_score = 0  # 추세 점수 (Max 30점)
+    price_score = 0  # 가격 위치 점수 (Max 20점)
+    timing_score = 0 # 타이밍 점수 (Max 30점)
+    fund_score = 0   # 기업 가치 점수 (Max 20점)
     
-    # (A) 이동평균선 (추세)
+    report = [] # 상세 리포트 리스트
+
+    # (A) 이동평균선 (추세) - Max 30점
     report.append("#### 1️⃣ 추세 분석 (이동평균선)")
     if curr['ma5'] > curr['ma20']:
-        score += 15
-        report.append("- ✅ **단기 상승 추세**: 최근 5일 평균가격이 한 달(20일) 평균보다 높습니다. 사람들이 비싸게라도 사고 싶어 한다는 뜻입니다.")
+        trend_score += 15
+        report.append("- ✅ **단기 상승 추세 (+15점)**: 5일선이 20일선 위에 있습니다.")
         if prev['ma5'] <= prev['ma20']:
-            score += 10
-            report.append("- 🔥 **골든크로스 발생**: 방금 5일선이 20일선을 뚫고 올라갔습니다! 아주 강력한 매수 신호입니다.")
+            trend_score += 10
+            report.append("- 🔥 **골든크로스 발생 (+10점)**: 5일선이 20일선을 방금 뚫었습니다.")
     else:
-        score -= 15
-        report.append("- 🔻 **단기 하락 추세**: 5일선이 20일선 아래에 있습니다. 단기적으로 힘이 빠지고 있습니다.")
+        report.append("- 🔻 **단기 하락 추세 (0점)**: 5일선이 20일선 아래에 있습니다.")
         
     if curr['Close'] > curr['ma60']:
-        score += 5
-        report.append("- ✅ **중기 상승**: 주가가 '수급선'이라 불리는 60일선 위에 있어 3개월 추세가 좋습니다.")
-    
-    # (B) 볼린저 밴드 (가격 위치)
-    report.append("\n#### 2️⃣ 가격 위치 (볼린저 밴드)")
-    if curr['Close'] <= curr['bb_l'] * 1.02:
-        score += 15
-        report.append("- ✅ **바닥권 도달**: 주가가 밴드 하단(지하 1층)에 있습니다. 통계적으로 반등할 확률이 높습니다.")
-    elif curr['Close'] >= curr['bb_h'] * 0.98:
-        score -= 15
-        report.append("- ⚠️ **천장권 도달**: 주가가 밴드 상단(옥상)에 있습니다. 조만간 조정이 올 수 있으니 조심하세요.")
+        trend_score += 5
+        report.append("- ✅ **중기 상승 (+5점)**: 주가가 60일선 위에 있습니다.")
     else:
-        report.append("- ➖ **중간 지대**: 주가가 밴드 안에서 평범하게 움직이고 있습니다.")
+        report.append("- 🔻 **중기 하락 (0점)**: 주가가 60일선 아래에 있습니다.")
+    
+    # (B) 볼린저 밴드 및 거래량 (가격 위치) - Max 20점
+    report.append("\n#### 2️⃣ 가격 위치 (볼린저 밴드 & 거래량)")
+    
+    # 가격 위치 (Max 15점)
+    if curr['Close'] <= curr['bb_l'] * 1.02:
+        price_score += 15
+        report.append("- ✅ **바닥권 도달 (+15점)**: 주가가 밴드 하단에 있어 반등 확률이 높습니다.")
+    elif curr['Close'] >= curr['bb_h'] * 0.98:
+        report.append("- ⚠️ **천장권 도달 (0점)**: 주가가 밴드 상단에 있어 조정 위험이 있습니다.")
+    else:
+        price_score += 5
+        report.append("- ➖ **중간 지대 (+5점)**: 주가가 평범하게 움직이고 있습니다.")
 
-    # (C) 거래량 (힘)
-    report.append("\n#### 3️⃣ 거래량 분석 (세력의 흔적)")
+    # 거래량 (Max 5점)
     vol_mean = df['Volume'].iloc[-20:].mean()
     if curr['Volume'] > vol_mean * 1.5:
         if curr['Close'] > prev['Close']:
-            score += 10
-            report.append("- 🔥 **거래량 폭발 (매수세)**: 평소보다 1.5배 많은 거래량이 터지면서 주가가 올랐습니다. 진짜 상승일 가능성이 높습니다.")
+            price_score += 5
+            report.append("- 🔥 **거래량 폭발 (매수세, +5점)**: 주가 상승과 함께 거래량이 크게 늘었습니다.")
         else:
-            score -= 10
-            report.append("- 💧 **거래량 폭발 (매도세)**: 거래량이 터지면서 주가가 떨어졌습니다. 누군가 급하게 팔고 도망갔다는 뜻입니다.")
-    else:
-        report.append("- ➖ **거래량 평이**: 특이한 거래량 변화는 없습니다.")
-
-    # (D) 보조지표 (MACD, RSI)
-    report.append("\n#### 4️⃣ 보조지표 (타이밍)")
+            report.append("- 💧 **거래량 폭발 (매도세, 0점)**: 주가 하락과 함께 거래량이 늘어 위험합니다.")
+    
+    # (C) 보조지표 (MACD, RSI) - Max 30점
+    report.append("\n#### 3️⃣ 보조지표 (타이밍)")
+    
+    # MACD (Max 10점)
     if curr['macd'] > curr['macd_signal']:
-        score += 10
-        report.append("- ✅ **MACD 상승**: 상승 에너지가 하락 에너지보다 셉니다.")
+        timing_score += 10
+        report.append("- ✅ **MACD 상승 (+10점)**: 매수 에너지가 매도 에너지보다 셉니다.")
     
+    # RSI (Max 20점)
     if curr['rsi'] < 30:
-        score += 20
-        report.append(f"- 🚀 **RSI 과매도 ({curr['rsi']:.1f})**: 주식이 '너무 싸다'고 비명을 지르고 있습니다. 공포에 살 기회입니다!")
+        timing_score += 20
+        report.append(f"- 🚀 **RSI 과매도 ({curr['rsi']:.1f}, +20점)**: 공포에 살 기회입니다!")
     elif curr['rsi'] > 70:
-        score -= 20
-        report.append(f"- 😱 **RSI 과매수 ({curr['rsi']:.1f})**: 주식이 '너무 비싸다'고 합니다. 탐욕 구간이니 추격 매수 금지!")
+        report.append(f"- 😱 **RSI 과매수 ({curr['rsi']:.1f}, 0점)**: 탐욕 구간이니 추격 매수 금지!")
+    else:
+        timing_score += 5
+        report.append(f"- ➖ **RSI 중간 구간 (+5점)**: 중립")
+
+    # (D) 기업 가치 (Fundamental) - Max 20점
+    report.append("\n#### 4️⃣ 기업 가치 분석 (개별 종목만 반영)")
+    currency = "KRW" if str(curr.name).isdigit() else "USD"
     
-    score = max(0, min(100, score))
-    return score, report, df
+    # fund_data가 있고 한국 주식일 때만 점수 반영
+    if fund_data is not None and currency == "KRW":
+        if 'PER' in fund_data and pd.notna(fund_data['PER']) and fund_data['PER'] > 0:
+            if fund_data['PER'] < 15: # PER 15 이하를 저평가로 판단 (성장주 고려)
+                fund_score += 10
+                report.append(f"- ✅ **PER 적정/저평가 (+10점)**: (현재 PER: {fund_data['PER']:.1f})")
+            else:
+                report.append(f"- 🔻 **PER 고평가 (0점)**: (현재 PER: {fund_data['PER']:.1f})")
+
+        if 'PBR' in fund_data and pd.notna(fund_data['PBR']):
+            if fund_data['PBR'] < 1.0: # PBR 1.0 이하는 자산가치 저평가
+                fund_score += 10
+                report.append(f"- ✅ **PBR 자산 저평가 (+10점)**: (현재 PBR: {fund_data['PBR']:.1f})")
+            else:
+                report.append(f"- ➖ **PBR 적정/고평가 (0점)**: (현재 PBR: {fund_data['PBR']:.1f})")
+    else:
+        report.append("- ℹ️ **ETF 또는 해외 주식**이라 가치 점수 계산에서 제외됩니다.")
+
+    # 최종 점수 계산 (각 영역의 점수 합산)
+    total_score = trend_score + price_score + timing_score + fund_score
+    total_score = max(0, min(100, total_score)) # 0~100점 범위 유지
+
+    return total_score, report, df, trend_score, price_score, timing_score, fund_score # 개별 점수들을 반환
 
 # ---------------------------------------------------------
 # 4. 화면 구성 (UI)
@@ -244,13 +278,15 @@ if st.button("분석 시작", type="primary") and user_input:
     
     # 2. 분석 시작
     with st.spinner(f"'{found_name}' 심층 분석 중입니다..."):
-        score, report, df = 0, [], pd.DataFrame()
+        # 함수 호출 시, 재무 데이터를 추가로 넘겨줍니다.
+        score, report, df, trend_s, price_s, timing_s, fund_s = 0, [], pd.DataFrame(), 0, 0, 0, 0
         raw_df, err = get_stock_data(found_code)
         
         if err:
             st.error(f"데이터를 가져올 수 없습니다: {err}")
         else:
-            score, report, df = analyze_advanced(raw_df)
+            # 새로운 분석 함수 호출 (fund_data를 함께 넘김)
+            score, report, df, trend_s, price_s, timing_s, fund_s = analyze_advanced(raw_df, fund_data)
             
             # --- [결과 화면] ---
             curr_price = df.iloc[-1]['Close']
@@ -260,20 +296,36 @@ if st.button("분석 시작", type="primary") and user_input:
             st.subheader(f"📢 {found_name} ({found_code}) 분석 리포트")
             st.markdown(f"### 현재가: **{fmt_price} {currency}**")
             
-            # 1. 점수판
+            # 1. 점수판 및 상세 분석 (출력 부분 수정)
             col1, col2 = st.columns([1, 2])
             with col1:
-                st.write("### 🤖 AI 매수 확률")
+                st.write("### 🤖 AI 최종 매수 확률")
                 st.write(f"# {score}%")
                 if score >= 80: st.success("강력 매수 구간!")
                 elif score >= 60: st.info("매수 고려 구간")
                 elif score <= 40: st.error("매도/관망 구간")
                 else: st.warning("중립 (지켜보세요)")
+
+                st.markdown("---")
+                st.markdown("### 요소별 매수 강도 (세분화)")
+                
+                # 점수별 퍼센트 출력 (Max score 기준)
+                st.write(f"**📈 추세 점수:** **{trend_s / 30 * 100:.1f}%** ({trend_s} / 30점)")
+                st.write(f"**📉 가격 위치 점수:** **{price_s / 20 * 100:.1f}%** ({price_s} / 20점)")
+                st.write(f"**⏱️ 타이밍 점수:** **{timing_s / 30 * 100:.1f}%** ({timing_s} / 30점)")
+                
+                # ETF/해외 주식인 경우 가치 점수 0으로 표시
+                if currency == "KRW" and fund_s > 0:
+                    st.write(f"**💰 기업 가치 점수:** **{fund_s / 20 * 100:.1f}%** ({fund_s} / 20점)")
+                elif currency == "KRW":
+                    st.write(f"**💰 기업 가치 점수:** **0.0%** (재무 지표 낮음)")
+                else:
+                    st.write(f"**💰 기업 가치 점수:** **제외** (해외/ETF)")
+
             with col2:
                 with st.expander("📝 상세 분석 이유 보기 (클릭)", expanded=True):
                     for line in report:
                         st.markdown(line)
-
             # 2. 종합 차트 (4단)
             st.subheader("📊 종합 차트 (4-in-1)")
             
