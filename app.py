@@ -254,6 +254,7 @@ user_input = st.text_input("🔍 종목 검색 (예: 삼성전자, 에코프로,
 if st.button("분석 시작", type="primary") and user_input:
     # 1. 종목 찾기 (만능 검색)
     listing = get_stock_listing()
+    # 검색어를 대문자로 바꾸고 공백을 제거하여 검색 준비
     search = user_input.upper().replace(" ", "")
     
     found_code = None
@@ -262,12 +263,15 @@ if st.button("분석 시작", type="primary") and user_input:
     
     # 1-1. KRX 리스트에서 찾기
     if not listing.empty:
-        # 이름 매칭
-        res = listing[listing['Name'].str.replace(" ", "").str.upper() == search]
-        if res.empty: # 코드로 시도
+        # 이름 매칭: 이름이 검색어를 포함하는지 유연하게 확인 (가장 중요한 수정)
+        res = listing[listing['Name'].str.contains(search, case=False, na=False)]
+        
+        # '현대차'라고 검색했을 때 '현대자동차'가 포함되도록 변경됨
+        if res.empty: # 2차: 코드로 시도 (코드로 검색했을 경우)
             res = listing[listing['Code'] == search]
             
         if not res.empty:
+            # 매칭된 여러 개 중 첫 번째 것을 사용 (가장 정확한 것)
             found_code = res.iloc[0]['Code']
             found_name = res.iloc[0]['Name']
             fund_data = res.iloc[0]
@@ -278,7 +282,7 @@ if st.button("분석 시작", type="primary") and user_input:
     
     # 2. 분석 시작
     with st.spinner(f"'{found_name}' 심층 분석 중입니다..."):
-        # 함수 호출 시, 재무 데이터를 추가로 넘겨줍니다.
+        # 분석 함수 호출 시, fund_data를 함께 넘겨줍니다.
         score, report, df, trend_s, price_s, timing_s, fund_s = 0, [], pd.DataFrame(), 0, 0, 0, 0
         raw_df, err = get_stock_data(found_code)
         
@@ -287,6 +291,9 @@ if st.button("분석 시작", type="primary") and user_input:
         else:
             # 새로운 분석 함수 호출 (fund_data를 함께 넘김)
             score, report, df, trend_s, price_s, timing_s, fund_s = analyze_advanced(raw_df, fund_data)
+            
+            # --- [결과 화면] ---
+            # ... (이하 결과 화면 출력 코드는 기존과 동일하게 유지됩니다.)
             
             # --- [결과 화면] ---
             curr_price = df.iloc[-1]['Close']
@@ -385,3 +392,4 @@ if st.button("분석 시작", type="primary") and user_input:
                 """)
             else:
                 st.caption("※ ETF나 해외 주식은 상세 재무 데이터(PER/PBR)가 제공되지 않습니다.")
+
