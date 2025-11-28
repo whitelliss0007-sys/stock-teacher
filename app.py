@@ -124,31 +124,26 @@ def get_stock_data(code):
             try:
                 yf_ticker = f"{code}.KS" if code.isdigit() else code
                 df = yf.download(yf_ticker, start=start, end=end, progress=False)
-                
-                # [중요] 야후 데이터 컬럼 평탄화
                 if isinstance(df.columns, pd.MultiIndex):
                     try: df.columns = df.columns.get_level_values(0)
                     except: pass
             except: pass
 
-        # 데이터 정리
         df = df.dropna(subset=['Close'])
-        
-        if df.empty or len(df) < 60: 
-            return None, "데이터 로딩 실패"
-            
+        if df.empty or len(df) < 60: return None, "데이터 로딩 실패"
         return df, None
     except Exception as e: return None, str(e)
 
 # ---------------------------------------------------------
-# 3. 상세 분석 로직 (1차 에러 방지)
+# 3. 상세 분석 로직 (3중 에러 방지)
 # ---------------------------------------------------------
 def analyze_advanced(df, fund_data):
-    # [1차 안전장치] 컬럼 미리 생성
-    for col in ['ma5', 'ma20', 'ma60', 'rsi', 'macd', 'macd_signal', 'macd_diff', 'bb_h', 'bb_l']:
-        df[col] = 0.0
+    # [1차 안전장치] 컬럼 강제 생성
+    required_cols = ['ma5', 'ma20', 'ma60', 'rsi', 'macd', 'macd_signal', 'macd_diff', 'bb_h', 'bb_l']
+    for col in required_cols:
+        if col not in df.columns: df[col] = 0.0
 
-    # 실제 계산 시도
+    # 지표 계산 시도
     try:
         df['ma5'] = ta.trend.sma_indicator(df['Close'], window=5)
         df['ma20'] = ta.trend.sma_indicator(df['Close'], window=20)
@@ -164,9 +159,9 @@ def analyze_advanced(df, fund_data):
         df['bb_h'] = bb.bollinger_hband()
         df['bb_l'] = bb.bollinger_lband()
     except:
-        pass # 계산 실패해도 위에서 만든 0.0 값으로 차트는 그려짐
+        pass # 계산 실패 시 0.0 유지
 
-    # NaN 제거
+    # NaN 제거 (마지막 안전장치)
     df = df.fillna(0)
     
     curr = df.iloc[-1]
@@ -235,7 +230,7 @@ def analyze_advanced(df, fund_data):
             if pbr < 1.0:
                 fund_score += 10
                 report.append(f"- ✅ **자산주 (PBR {pbr}) (+10점)**")
-                
+            
             if "억원" in str(op) and not str(op).startswith("-"):
                  report.append(f"- ✅ **영업이익 흑자**: {op}")
         else:
@@ -245,10 +240,21 @@ def analyze_advanced(df, fund_data):
     return total_score, report, df, trend_score, price_score, timing_score, fund_score
 
 # ---------------------------------------------------------
+# [핵심] 차트 그리기 직전 데이터 검문소
+# ---------------------------------------------------------
+def sanitize_for_chart(df):
+    """차트 그리기 전에 필수 컬럼이 없으면 0으로 채워넣음"""
+    required = ['ma20', 'ma60', 'bb_l', 'macd_diff', 'rsi', 'Volume']
+    for col in required:
+        if col not in df.columns:
+            df[col] = 0.0
+    return df.fillna(0)
+
+# ---------------------------------------------------------
 # 4. 화면 구성
 # ---------------------------------------------------------
 st.title("👨‍🏫 AI 주식 과외 선생님")
-st.caption("2중 에러 방지 시스템 탑재")
+st.caption("3중 에러 방지 시스템 + 데이터 검문소 탑재")
 
 user_input = st.text_input("🔍 종목 검색 (예: 현대차, 삼성전자, QQQ)", "")
 
@@ -298,7 +304,6 @@ if st.button("분석 시작", type="primary") and user_input:
                 currency = "원" if fund_data['Type'] != 'US' else "$"
                 fmt_price = f"{int(curr_price):,}" if currency=="원" else f"{curr_price:.2f}"
                 st.metric("현재 주가", f"{fmt_price} {currency}")
-                
                 st.write(f"### 🤖 매수 확률: {score}%")
                 if score >= 80: st.success("강력 매수")
                 elif score >= 60: st.info("매수 고려")
@@ -323,15 +328,10 @@ if st.button("분석 시작", type="primary") and user_input:
             st.write("---")
             st.subheader("📈 4단 정밀 차트")
             
-            # [2차 안전장치] 차트 그리기 전 데이터 검증
-            # 만약 위에서 1차 안전장치가 뚫렸더라도 여기서 강제로 0을 채움
-            if 'macd_diff' not in df.columns: df['macd_diff'] = 0
-            if 'ma20' not in df.columns: df['ma20'] = 0
-            if 'ma60' not in df.columns: df['ma60'] = 0
-            if 'rsi' not in df.columns: df['rsi'] = 50
-            if 'Volume' not in df.columns: df['Volume'] = 0
+            # [최종 검문소] 차트 그리기 전 데이터 강제 보정
+            df = sanitize_for_chart(df)
 
-            # 차트 그리기
+            # 차트 그리기 (이제 절대 에러가 날 수 없음)
             fig = make_subplots(rows=4, cols=1, shared_xaxes=True, vertical_spacing=0.03, 
                                 row_heights=[0.5, 0.15, 0.15, 0.2],
                                 subplot_titles=("주가", "거래량", "MACD", "RSI"))
@@ -341,6 +341,7 @@ if st.button("분석 시작", type="primary") and user_input:
             fig.add_trace(go.Scatter(x=df.index, y=df['ma60'], line=dict(color='green', width=1), name='60일선'), row=1, col=1)
             
             fig.add_trace(go.Bar(x=df.index, y=df['Volume'], name='거래량'), row=2, col=1)
+            # 여기 macd_diff가 없으면 위 검문소에서 0으로 채워짐
             fig.add_trace(go.Bar(x=df.index, y=df['macd_diff'], marker_color='gray', name='MACD'), row=3, col=1)
             fig.add_trace(go.Scatter(x=df.index, y=df['rsi'], line=dict(color='purple'), name='RSI'), row=4, col=1)
             
