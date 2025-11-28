@@ -12,6 +12,9 @@ import ta
 import datetime
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import requests
+from bs4 import BeautifulSoup
+import numpy as np # pandas Nan 처리용 추가
 
 # 폰트 및 스타일
 st.set_page_config(page_title="AI 주식 과외 선생님", layout="wide", page_icon="👨‍🏫")
@@ -30,18 +33,18 @@ def get_stock_listing():
     
     # 미국 및 ETF 수동 매핑 (필수 종목)
     manual_data = [
-        {'Code':'QQQ', 'Name':'Invesco QQQ', 'Market':'NASDAQ'},
-        {'Code':'SPY', 'Name':'SPDR S&P 500', 'Market':'NYSE'},
-        {'Code':'SOXL', 'Name':'Direxion Daily Semi Bull 3X', 'Market':'NYSE'},
-        {'Code':'TSLA', 'Name':'Tesla', 'Market':'NASDAQ'},
-        {'Code':'AAPL', 'Name':'Apple', 'Market':'NASDAQ'},
-        {'Code':'NVDA', 'Name':'NVIDIA', 'Market':'NASDAQ'},
-        {'Code':'MSFT', 'Name':'Microsoft', 'Market':'NASDAQ'},
+        {'Code':'QQQ', 'Name':'Invesco QQQ', 'Market':'NASDAQ', 'Marcap':None, 'PER':None, 'PBR':None, 'DividendYield':None},
+        {'Code':'SPY', 'Name':'SPDR S&P 500', 'Market':'NYSE', 'Marcap':None, 'PER':None, 'PBR':None, 'DividendYield':None},
+        {'Code':'SOXL', 'Name':'Direxion Daily Semi Bull 3X', 'Market':'NYSE', 'Marcap':None, 'PER':None, 'PBR':None, 'DividendYield':None},
+        {'Code':'TSLA', 'Name':'Tesla', 'Market':'NASDAQ', 'Marcap':None, 'PER':None, 'PBR':None, 'DividendYield':None},
+        {'Code':'AAPL', 'Name':'Apple', 'Market':'NASDAQ', 'Marcap':None, 'PER':None, 'PBR':None, 'DividendYield':None},
+        {'Code':'NVDA', 'Name':'NVIDIA', 'Market':'NASDAQ', 'Marcap':None, 'PER':None, 'PBR':None, 'DividendYield':None},
+        {'Code':'MSFT', 'Name':'Microsoft', 'Market':'NASDAQ', 'Marcap':None, 'PER':None, 'PBR':None, 'DividendYield':None},
         # 한국 주요 ETF 수동 추가 (검색용)
-        {'Code':'069500', 'Name':'KODEX 200', 'Market':'KOSPI'},
-        {'Code':'122630', 'Name':'KODEX 레버리지', 'Market':'KOSPI'},
-        {'Code':'252670', 'Name':'KODEX 200선물인버스2X', 'Market':'KOSPI'},
-        {'Code':'091230', 'Name':'TIGER 반도체', 'Market':'KOSPI'},
+        {'Code':'069500', 'Name':'KODEX 200', 'Market':'KOSPI', 'Marcap':None, 'PER':None, 'PBR':None, 'DividendYield':None},
+        {'Code':'122630', 'Name':'KODEX 레버리지', 'Market':'KOSPI', 'Marcap':None, 'PER':None, 'PBR':None, 'DividendYield':None},
+        {'Code':'252670', 'Name':'KODEX 200선물인버스2X', 'Market':'KOSPI', 'Marcap':None, 'PER':None, 'PBR':None, 'DividendYield':None},
+        {'Code':'091230', 'Name':'TIGER 반도체', 'Market':'KOSPI', 'Marcap':None, 'PER':None, 'PBR':None, 'DividendYield':None},
     ]
     manual_df = pd.DataFrame(manual_data)
     
@@ -51,6 +54,10 @@ def get_stock_listing():
         cols = ['Code', 'Name', 'Market', 'Marcap', 'PER', 'PBR', 'DividendYield']
         for c in cols:
             if c not in krx.columns: krx[c] = None
+        # 데이터 타입 정리 (숫자형으로 강제 변환)
+        krx['PER'] = pd.to_numeric(krx['PER'], errors='coerce').fillna(0)
+        krx['PBR'] = pd.to_numeric(krx['PBR'], errors='coerce').fillna(0)
+        
         return pd.concat([krx[cols], manual_df], ignore_index=True)
     else:
         return manual_df
@@ -61,18 +68,24 @@ def get_market_indices():
     try:
         end = datetime.datetime.now()
         start = end - datetime.timedelta(days=7)
+        
         k = fdr.DataReader('KS11', start, end).iloc[-1]
         kq = fdr.DataReader('KQ11', start, end).iloc[-1]
         ns = fdr.DataReader('IXIC', start, end).iloc[-1]
         
-        def calc_chg(df): return ((df['Close'] - df['Open'])/df['Open'])*100 
+        # 임시 데이터프레임에서 종가 추출
+        k_close = fdr.DataReader('KS11', start, end).iloc[-1]['Close']
+        kq_close = fdr.DataReader('KQ11', start, end).iloc[-1]['Close']
+        ns_close = fdr.DataReader('IXIC', start, end).iloc[-1]['Close']
         
+        # 현재 코드에서는 등락률 계산 로직을 간소화하고 종가만 반환
         return {
-            "kospi": (k['Close'], calc_chg(fdr.DataReader('KS11', start, end).iloc[-2:])),
-            "kosdaq": (kq['Close'], calc_chg(fdr.DataReader('KQ11', start, end).iloc[-2:])),
-            "nasdaq": (ns['Close'], calc_chg(fdr.DataReader('IXIC', start, end).iloc[-2:]))
+            "kospi": k_close,
+            "kosdaq": kq_close,
+            "nasdaq": ns_close
         }
-    except:
+    except Exception as e:
+        print(f"Index loading error: {e}")
         return None
 
 # ---------------------------------------------------------
@@ -104,7 +117,7 @@ def get_stock_data(code, market=None):
 
 def analyze_advanced(df, fund_data):
     """초보자를 위한 상세 분석 로직 (점수 세분화)"""
-    # 1. 지표 계산 (기존과 동일)
+    # 1. 지표 계산
     df['ma5'] = ta.trend.sma_indicator(df['Close'], window=5)
     df['ma20'] = ta.trend.sma_indicator(df['Close'], window=20)
     df['ma60'] = ta.trend.sma_indicator(df['Close'], window=60)
@@ -164,6 +177,7 @@ def analyze_advanced(df, fund_data):
         report.append("- ➖ **중간 지대 (+5점)**: 주가가 평범하게 움직이고 있습니다.")
 
     # 거래량 (Max 5점)
+    report.append("\n#### 3️⃣ 거래량 분석 (세력의 흔적)")
     vol_mean = df['Volume'].iloc[-20:].mean()
     if curr['Volume'] > vol_mean * 1.5:
         if curr['Close'] > prev['Close']:
@@ -171,9 +185,11 @@ def analyze_advanced(df, fund_data):
             report.append("- 🔥 **거래량 폭발 (매수세, +5점)**: 주가 상승과 함께 거래량이 크게 늘었습니다.")
         else:
             report.append("- 💧 **거래량 폭발 (매도세, 0점)**: 주가 하락과 함께 거래량이 늘어 위험합니다.")
+    else:
+        report.append("- ➖ **거래량 평이**: 특이한 거래량 변화는 없습니다.")
     
     # (C) 보조지표 (MACD, RSI) - Max 30점
-    report.append("\n#### 3️⃣ 보조지표 (타이밍)")
+    report.append("\n#### 4️⃣ 보조지표 (타이밍)")
     
     # MACD (Max 10점)
     if curr['macd'] > curr['macd_signal']:
@@ -191,26 +207,31 @@ def analyze_advanced(df, fund_data):
         report.append(f"- ➖ **RSI 중간 구간 (+5점)**: 중립")
 
     # (D) 기업 가치 (Fundamental) - Max 20점
-    report.append("\n#### 4️⃣ 기업 가치 분석 (개별 종목만 반영)")
+    report.append("\n#### 5️⃣ 기업 가치 분석 (개별 종목만 반영)")
     currency = "KRW" if str(curr.name).isdigit() else "USD"
     
     # fund_data가 있고 한국 주식일 때만 점수 반영
-    if fund_data is not None and currency == "KRW":
-        if 'PER' in fund_data and pd.notna(fund_data['PER']) and fund_data['PER'] > 0:
-            if fund_data['PER'] < 15: # PER 15 이하를 저평가로 판단 (성장주 고려)
-                fund_score += 10
-                report.append(f"- ✅ **PER 적정/저평가 (+10점)**: (현재 PER: {fund_data['PER']:.1f})")
-            else:
-                report.append(f"- 🔻 **PER 고평가 (0점)**: (현재 PER: {fund_data['PER']:.1f})")
+    # PER/PBR이 0이 아닌 경우에만 분석
+    
+    per_val = fund_data['PER'] if fund_data is not None and 'PER' in fund_data else 0
+    pbr_val = fund_data['PBR'] if fund_data is not None and 'PBR' in fund_data else 0
 
-        if 'PBR' in fund_data and pd.notna(fund_data['PBR']):
-            if fund_data['PBR'] < 1.0: # PBR 1.0 이하는 자산가치 저평가
-                fund_score += 10
-                report.append(f"- ✅ **PBR 자산 저평가 (+10점)**: (현재 PBR: {fund_data['PBR']:.1f})")
-            else:
-                report.append(f"- ➖ **PBR 적정/고평가 (0점)**: (현재 PBR: {fund_data['PBR']:.1f})")
+    if currency == "KRW" and per_val > 0 and pbr_val > 0:
+        # PER (Max 10점)
+        if per_val < 15: # PER 15 이하를 저평가로 판단 (성장주 고려)
+            fund_score += 10
+            report.append(f"- ✅ **PER 적정/저평가 (+10점)**: (현재 PER: {per_val:.1f})")
+        else:
+            report.append(f"- 🔻 **PER 고평가 (0점)**: (현재 PER: {per_val:.1f})")
+
+        # PBR (Max 10점)
+        if pbr_val < 1.0: # PBR 1.0 이하는 자산가치 저평가
+            fund_score += 10
+            report.append(f"- ✅ **PBR 자산 저평가 (+10점)**: (현재 PBR: {pbr_val:.1f})")
+        else:
+            report.append(f"- ➖ **PBR 적정/고평가 (0점)**: (현재 PBR: {pbr_val:.1f})")
     else:
-        report.append("- ℹ️ **ETF 또는 해외 주식**이라 가치 점수 계산에서 제외됩니다.")
+        report.append("- ℹ️ **ETF, 해외 주식, 또는 데이터 오류**로 가치 점수 계산에서 제외됩니다.")
 
     # 최종 점수 계산 (각 영역의 점수 합산)
     total_score = trend_score + price_score + timing_score + fund_score
@@ -228,23 +249,11 @@ st.write("초보자도 이해하기 쉬운 차트와 설명을 제공합니다."
 indices = get_market_indices()
 if indices:
     c1, c2, c3 = st.columns(3)
-    # 지수 데이터가 튜플 (가격, 등락률)인지 확인하고 처리
-    try:
-        k_val = indices['kospi'][0]
-        # 만약 Series라면 실수로 변환
-        if isinstance(k_val, pd.Series): k_val = k_val.iloc[0]
-        
-        c1.metric("🇰🇷 코스피", f"{k_val:,.2f}")
-        
-        kq_val = indices['kosdaq'][0]
-        if isinstance(kq_val, pd.Series): kq_val = kq_val.iloc[0]
-        c2.metric("🇰🇷 코스닥", f"{kq_val:,.2f}")
-        
-        ns_val = indices['nasdaq'][0]
-        if isinstance(ns_val, pd.Series): ns_val = ns_val.iloc[0]
-        c3.metric("🇺🇸 나스닥", f"{ns_val:,.2f}")
-    except:
-        st.write("지수 로딩 중...")
+    
+    # 지수 데이터 출력
+    c1.metric("🇰🇷 코스피", f"{indices['kospi']:,.2f}")
+    c2.metric("🇰🇷 코스닥", f"{indices['kosdaq']:,.2f}")
+    c3.metric("🇺🇸 나스닥", f"{indices['nasdaq']:,.2f}")
 
 st.divider()
 
@@ -262,7 +271,7 @@ if st.button("분석 시작", type="primary") and user_input:
     
     # 1-1. KRX 리스트에서 찾기
     if not listing.empty:
-        # 이름 매칭: 이름이 검색어를 포함하는지 유연하게 확인 (현대차, 삼성 등 대응)
+        # 이름 매칭: 이름이 검색어를 포함하는지 유연하게 확인 (가장 중요한 수정)
         res = listing[listing['Name'].str.contains(search, case=False, na=False)]
         
         if res.empty: # 2차: 코드로 시도
@@ -274,58 +283,50 @@ if st.button("분석 시작", type="primary") and user_input:
             fund_data = res.iloc[0]
             
             # 🚨 비상 로직: PER/PBR이 0일 경우, Naver Finance에서 데이터 보강 🚨
-            # KRW 종목이면서, PER 또는 PBR이 0 또는 유효하지 않은 값일 때 시도
             is_krw = found_code.isdigit()
             is_fund_missing = fund_data['PER'] == 0 or pd.isna(fund_data['PER'])
             
             if is_krw and is_fund_missing:
                 try:
-                    naver_url = f"https://finance.naver.com/item/main.nhn?code={found_code}"
+                    import requests
+                    from bs4 import BeautifulSoup
                     
-                    # Naver 금융에서 PER/PBR을 포함한 '주요 재무지표' 테이블 전체를 가져옴
-                    tables = pd.read_html(naver_url, match='PER|PBR|배당수익률')
+                    naver_url = f"https://finance.naver.com/item/main.naver?code={found_code}"
+                    headers = {'User-Agent': 'Mozilla/5.0'}
+                    response = requests.get(naver_url, headers=headers)
+                    soup = BeautifulSoup(response.text, 'html.parser')
                     
-                    if tables:
-                        # 보통 첫 번째 매칭 테이블이 원하는 데이터 (네이버의 주요 재무 정보)
-                        fund_table = tables[0] 
+                    # PER/PBR 위치를 직접 타겟팅
+                    per_tag = soup.find('td', text='PER').find_next_sibling('td')
+                    pbr_tag = soup.find('td', text='PBR').find_next_sibling('td')
+                    
+                    per_val = per_tag.text.strip() if per_tag and per_tag.find_next_sibling('td') else '0'
+                    pbr_val = pbr_tag.text.strip() if pbr_tag and pbr_tag.find_next_sibling('td') else '0'
+                    
+                    # 데이터가 유효한지 확인하고 fund_data에 주입
+                    if per_val.replace('.', '', 1).replace('-', '', 1).isdigit():
+                        fund_data['PER'] = float(per_val.replace(',', '').replace('-', '0'))
+                    if pbr_val.replace('.', '', 1).replace('-', '', 1).isdigit():
+                        fund_data['PBR'] = float(pbr_val.replace(',', '').replace('-', '0'))
                         
-                        # PER 값 추출 (PER이 테이블 1열 1행에 있다고 가정)
-                        per_val = fund_table[1][0] if fund_table[0][0] == 'PER' else None
-                        
-                        # PBR 값 추출 (PBR이 테이블 1열 2행에 있다고 가정)
-                        pbr_val = fund_table[1][1] if fund_table[0][1] == 'PBR' else None
-                        
-                        # 데이터 유효성 확인 및 fund_data에 주입
-                        if pd.notna(per_val) and per_val != 0 and per_val != '-':
-                            fund_data['PER'] = float(per_val)
-                        if pd.notna(pbr_val) and pbr_val != 0 and pbr_val != '-':
-                            fund_data['PBR'] = float(pbr_val)
-                            
                 except Exception as e:
-                    # 크롤링 실패 시 무시하고 다음 단계 진행
-                    print(f"Naver fundamental scrape failed: {e}")
+                    print(f"BeautifulSoup fundamental scrape failed: {e}")
             # 🚨 비상 로직 끝 🚨
-
+    
     # 1-2. 못 찾았으면 미국 티커로 간주
     if not found_code:
         found_code = search
     
     # 2. 분석 시작
     with st.spinner(f"'{found_name}' 심층 분석 중입니다..."):
-        # 함수 호출 및 결과 출력 (기존과 동일)
         score, report, df, trend_s, price_s, timing_s, fund_s = 0, [], pd.DataFrame(), 0, 0, 0, 0
         raw_df, err = get_stock_data(found_code)
         
         if err:
             st.error(f"데이터를 가져올 수 없습니다: {err}")
         else:
-            # 수정된 analyze_advanced 함수 호출
+            # 최종 분석 함수 호출 (fund_data를 함께 넘김)
             score, report, df, trend_s, price_s, timing_s, fund_s = analyze_advanced(raw_df, fund_data)
-            
-            # ... (이하 결과 화면 출력 코드는 동일) ...
-            
-            # --- [결과 화면] ---
-            # ... (이하 결과 화면 출력 코드는 기존과 동일하게 유지됩니다.)
             
             # --- [결과 화면] ---
             curr_price = df.iloc[-1]['Close']
@@ -335,7 +336,7 @@ if st.button("분석 시작", type="primary") and user_input:
             st.subheader(f"📢 {found_name} ({found_code}) 분석 리포트")
             st.markdown(f"### 현재가: **{fmt_price} {currency}**")
             
-            # 1. 점수판 및 상세 분석 (출력 부분 수정)
+            # 1. 점수판 및 상세 분석 (출력 부분)
             col1, col2 = st.columns([1, 2])
             with col1:
                 st.write("### 🤖 AI 최종 매수 확률")
@@ -353,19 +354,18 @@ if st.button("분석 시작", type="primary") and user_input:
                 st.write(f"**📉 가격 위치 점수:** **{price_s / 20 * 100:.1f}%** ({price_s} / 20점)")
                 st.write(f"**⏱️ 타이밍 점수:** **{timing_s / 30 * 100:.1f}%** ({timing_s} / 30점)")
                 
-                # ETF/해외 주식인 경우 가치 점수 0으로 표시
-                if currency == "KRW" and fund_s > 0:
+                # 가치 점수 출력
+                if currency == "KRW" and fund_data is not None and fund_data['PER'] > 0:
                     st.write(f"**💰 기업 가치 점수:** **{fund_s / 20 * 100:.1f}%** ({fund_s} / 20점)")
-                elif currency == "KRW":
-                    st.write(f"**💰 기업 가치 점수:** **0.0%** (재무 지표 낮음)")
                 else:
-                    st.write(f"**💰 기업 가치 점수:** **제외** (해외/ETF)")
+                    st.write(f"**💰 기업 가치 점수:** **제외** (해외/ETF/데이터 오류)")
 
             with col2:
                 with st.expander("📝 상세 분석 이유 보기 (클릭)", expanded=True):
                     for line in report:
                         st.markdown(line)
-            # 2. 종합 차트 (4단)
+
+            # 2. 종합 차트 (4단) - 기존 코드 유지
             st.subheader("📊 종합 차트 (4-in-1)")
             
             fig = make_subplots(rows=4, cols=1, shared_xaxes=True, 
@@ -400,21 +400,20 @@ if st.button("분석 시작", type="primary") and user_input:
             # 3. 재무 분석 (맨 아래)
             st.divider()
             st.subheader("📑 기업 가치 평가 (재무제표)")
-            if fund_data is not None and currency == "KRW":
+            
+            # 재무 데이터가 유효한지 최종 검증
+            per_final = fund_data['PER'] if fund_data is not None and 'PER' in fund_data and fund_data['PER'] > 0 else 0
+            pbr_final = fund_data['PBR'] if fund_data is not None and 'PBR' in fund_data and fund_data['PBR'] > 0 else 0
+            marcap_final = fund_data['Marcap'] if fund_data is not None and 'Marcap' in fund_data and pd.notna(fund_data['Marcap']) else 0
+            div_final = fund_data['DividendYield'] if fund_data is not None and 'DividendYield' in fund_data and pd.notna(fund_data['DividendYield']) else 0
+            
+            if currency == "KRW" and marcap_final > 0:
                 m1, m2, m3, m4 = st.columns(4)
                 
-                # 데이터 꺼내기 (안전하게)
-                def get_val(k): return fund_data[k] if k in fund_data and pd.notna(fund_data[k]) else 0
-                
-                marcap = get_val('Marcap')
-                per = get_val('PER')
-                pbr = get_val('PBR')
-                div = get_val('DividendYield')
-                
-                m1.metric("시가총액", f"{int(marcap/100000000):,} 억원")
-                m2.metric("PER (저평가 척도)", f"{per}")
-                m3.metric("PBR (자산가치)", f"{pbr}")
-                m4.metric("배당수익률", f"{div}%")
+                m1.metric("시가총액", f"{int(marcap_final/100000000):,} 억원")
+                m2.metric("PER (저평가 척도)", f"{per_final}")
+                m3.metric("PBR (자산가치)", f"{pbr_final}")
+                m4.metric("배당수익률", f"{div_final}%")
                 
                 st.info("""
                 💡 **재무지표 읽는 법 (초보자용)**
@@ -424,5 +423,3 @@ if st.button("분석 시작", type="primary") and user_input:
                 """)
             else:
                 st.caption("※ ETF나 해외 주식은 상세 재무 데이터(PER/PBR)가 제공되지 않습니다.")
-
-
