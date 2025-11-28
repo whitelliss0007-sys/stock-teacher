@@ -202,9 +202,11 @@ def get_stock_data(code):
 # 4. 분석 로직
 # ---------------------------------------------------------
 def analyze_advanced(df, fund_data):
+    # [1차 안전장치] 컬럼 초기화
     for col in ['ma5', 'ma20', 'ma60', 'rsi', 'macd', 'macd_signal', 'macd_diff', 'bb_h', 'bb_l']:
         if col not in df.columns: df[col] = 0.0
 
+    # 지표 계산
     try:
         df['ma5'] = ta.trend.sma_indicator(df['Close'], window=5)
         df['ma20'] = ta.trend.sma_indicator(df['Close'], window=20)
@@ -225,72 +227,87 @@ def analyze_advanced(df, fund_data):
     trend_score = 0; price_score = 0; timing_score = 0; fund_score = 0
     report = []
 
-    # 1. 추세
-    report.append("#### 1️⃣ 추세 분석")
+    # -------------------------------------------------------
+    # 1. 추세 분석 (Trend) - 상세 설명
+    # -------------------------------------------------------
+    report.append("#### 1️⃣ 추세 분석 (주가의 방향성)")
     if curr['ma5'] > curr['ma20']:
         trend_score += 15
-        report.append("- ✅ **단기 상승 (+15점)**: 5일선 > 20일선. 매수세 우위.")
+        report.append(f"- ✅ **단기 상승 추세 (5일선 > 20일선)**\n  : 최근 일주일간 주식을 산 사람들의 평균단가가 한 달 평균보다 높습니다. 이는 **'지금 당장 사고 싶어 하는 힘'**이 강하다는 뜻입니다.")
         if prev['ma5'] <= prev['ma20']:
             trend_score += 10
-            report.append("- 🔥 **골든크로스 (+10점)**: 상승 전환 신호!")
+            report.append(f"- 🔥 **골든크로스 발생! (강력 매수 신호)**\n  : 방금 막 단기 상승세가 장기 추세를 뚫고 올라갔습니다. 주가가 바닥을 찍고 **본격적으로 오르기 시작하는 초입**일 가능성이 매우 높습니다.")
     else:
-        report.append("- 🔻 **단기 하락 (0점)**: 5일선 < 20일선.")
+        report.append(f"- 🔻 **단기 하락 추세 (5일선 < 20일선)**\n  : 최근 주가가 한 달 평균보다 낮습니다. 단기적으로 **'팔고 싶어 하는 힘'**이 더 강해서 주가가 힘을 못 쓰고 있습니다.")
     
     if curr['Close'] > curr['ma60']:
         trend_score += 5
-        report.append("- ✅ **중기 상승 (+5점)**: 60일선 위 안착.")
+        report.append(f"- ✅ **중기 상승 (60일선 위)**\n  : 3개월(분기) 평균가격보다 주가가 높습니다. 실적 시즌이나 중장기적인 흐름이 **우상향(상승)** 하고 있어 안정적입니다.")
+    else:
+        report.append(f"- 🔻 **중기 하락 (60일선 아래)**\n  : 3개월 평균보다 주가가 낮습니다. 소위 '물려있는' 사람이 많아 주가가 오를 때마다 본전 심리에 매도 물량이 나올 수 있습니다.")
 
-    # 2. 가격
-    report.append("\n#### 2️⃣ 가격 위치")
+    # -------------------------------------------------------
+    # 2. 가격 위치 (Bollinger Bands) - 상세 설명
+    # -------------------------------------------------------
+    report.append("\n#### 2️⃣ 가격 위치 (지금 싼가요? 비싼가요?)")
     if curr['Close'] <= curr['bb_l'] * 1.02:
         price_score += 15
-        report.append("- ✅ **바닥권 (+15점)**: 반등 기대.")
+        report.append(f"- ✅ **바닥권 도달 (저점 매수 기회)**\n  : 주가가 볼린저밴드라는 **'통계적 가격 범위'의 지하 1층**에 도착했습니다. 과거 통계를 볼 때, 이 위치에서는 주가가 다시 위로 튀어 오를(반등) 확률이 95% 이상입니다.")
     elif curr['Close'] >= curr['bb_h'] * 0.98:
-        report.append("- ⚠️ **천장권 (0점)**: 조정 주의.")
+        report.append(f"- ⚠️ **천장권 도달 (고점 주의)**\n  : 주가가 밴드 **옥상(최상단)**에 닿았습니다. 단기간에 너무 급하게 올랐다는 뜻입니다. 지금 사면 '상투'를 잡을 수 있으니 조심해야 합니다.")
     else:
         price_score += 5
-        report.append("- ➖ **중간 지대 (+5점)**")
+        report.append(f"- ➖ **허리 구간 (중간 지대)**\n  : 주가가 과열되지도, 너무 싸지도 않은 적정한 위치입니다. 이럴 땐 '추세(1번 지표)'를 믿고 따라가는 것이 좋습니다.")
 
-    # 3. 심리
-    report.append("\n#### 3️⃣ 투자 심리")
+    # -------------------------------------------------------
+    # 3. 투자 심리 (RSI) - 상세 설명
+    # -------------------------------------------------------
+    report.append("\n#### 3️⃣ 투자 심리 (공포 vs 탐욕)")
     if curr['rsi'] < 30:
         timing_score += 20
-        report.append(f"- 🚀 **과매도 (RSI {curr['rsi']:.0f}) (+20점)**: 저점 매수 기회.")
+        report.append(f"- 🚀 **과매도 구간 (공포에 사라!)**\n  : 투자 심리 지표(RSI)가 {curr['rsi']:.0f}입니다. 사람들이 공포에 질려 주식을 투매했습니다. 역설적으로 **지금이 남들보다 싸게 주식을 주워담을 수 있는 최고의 기회**입니다.")
     elif curr['rsi'] > 70:
-        report.append(f"- 😱 **과매수 (RSI {curr['rsi']:.0f}) (0점)**: 과열 상태.")
+        report.append(f"- 😱 **과매수 구간 (탐욕을 경계하라)**\n  : 지표가 {curr['rsi']:.0f}로 과열 상태입니다. 너도나도 주식을 사서 가격이 비정상적으로 올랐을 수 있습니다. 추격 매수는 자제하세요.")
     else:
         timing_score += 5
-        report.append(f"- ➖ **안정 (RSI {curr['rsi']:.0f}) (+5점)**")
+        report.append(f"- ➖ **심리 안정적**\n  : 투자자들의 심리가 흥분하지 않고 차분합니다. (RSI {curr['rsi']:.0f})")
 
-    # 4. 가치
-    report.append("\n#### 4️⃣ 기업 가치")
-    if fund_data['Type'] == 'ETF' or fund_data['Type'] == 'US':
+    # -------------------------------------------------------
+    # 4. 기업 가치 (Fundamentals) - 상세 설명
+    # -------------------------------------------------------
+    report.append("\n#### 4️⃣ 기업 가치 (이 주식, 살 가치가 있나?)")
+    
+    if fund_data['Type'] == 'ETF':
         fund_score += 10
-        report.append("- ℹ️ **ETF/해외주식**: 차트와 추세 위주로 분석합니다.")
+        report.append("- ℹ️ **ETF 상품입니다.**\n  : ETF는 여러 기업을 묶어놓은 '종합선물세트'라서 PER/PBR로 평가하기 어렵습니다. 대신 **1번(추세)과 3번(심리) 지표**를 보고 매매하는 것이 훨씬 정확합니다.")
     else:
         per = fund_data.get('PER', 0)
         pbr = fund_data.get('PBR', 0)
         op = fund_data.get('OperatingProfit', 'N/A')
         
+        # PER 분석
         if per > 0:
             if per < 10: 
                 fund_score += 10
-                report.append(f"- ✅ **저평가 (PER {per}) (+10점)**")
+                report.append(f"- ✅ **저평가 우량주 (PER {per})**\n  : 기업이 1년에 버는 돈에 비해 주가가 매우 쌉니다. (기준 10배 이하). **가치투자 관점에서 매수하기 아주 매력적인 가격대**입니다.")
             elif per > 50:
-                 report.append(f"- ⚠️ **고평가 (PER {per}) (0점)**")
+                 report.append(f"- ⚠️ **고평가 성장주 (PER {per})**\n  : 현재 버는 돈보다 미래의 기대감이 가격에 많이 반영되어 있습니다. 성장성이 꺾이면 주가가 급락할 수 있으니 주의하세요.")
             else:
                  fund_score += 5
-                 report.append(f"- ➖ **적정 (PER {per}) (+5점)**")
+                 report.append(f"- ➖ **적정 주가 (PER {per})**\n  : 기업의 이익 수준에 딱 맞는 적절한 주가입니다.")
+        
+        # PBR 분석
+        if pbr > 0 and pbr < 1.0:
+            fund_score += 10
+            report.append(f"- ✅ **자산 가치 우수 (PBR {pbr})**\n  : PBR이 1보다 작다는 건, **'회사가 지금 당장 망해서 공장과 땅을 다 팔아도 현재 주가보다는 돈이 더 나온다'**는 뜻입니다. 그만큼 절대적으로 싼 가격입니다.")
             
-            if pbr < 1.0:
-                fund_score += 10
-                report.append(f"- ✅ **자산주 (PBR {pbr}) (+10점)**")
-                
-            if "억원" in str(op) and not str(op).startswith("-"):
-                 report.append(f"- ✅ **영업이익 흑자**: {op}")
-        else:
-            report.append("- ℹ️ 재무 정보 부족")
+        # 영업이익 분석
+        if "억원" in str(op) and not str(op).startswith("-"):
+             report.append(f"- ✅ **영업이익 흑자 ({op})**\n  : 이 회사는 본업(장사)을 통해 돈을 잘 벌고 있습니다. 재무적으로 튼튼하여 장기 투자해도 안전합니다.")
+        elif "억원" in str(op) and str(op).startswith("-"):
+             report.append(f"- ⚠️ **영업이익 적자 ({op})**\n  : 회사가 장사를 해서 손해를 보고 있습니다. 재무 상태가 위험할 수 있으니 단기적인 접근이 필요합니다.")
 
+    # 최종 점수 계산
     total_score = max(0, min(100, trend_score + price_score + timing_score + fund_score))
     return total_score, report, df, trend_score, price_score, timing_score, fund_score
 
@@ -435,3 +452,4 @@ if selected_code:
             
             fig.update_layout(height=900, xaxis_rangeslider_visible=False, showlegend=False)
             st.plotly_chart(fig, use_container_width=True)
+
