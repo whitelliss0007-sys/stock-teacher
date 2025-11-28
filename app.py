@@ -100,21 +100,18 @@ def get_krx_list():
 # 2. 재무 데이터 수집 (네이버/야후)
 # ---------------------------------------------------------
 def get_fundamental_data(code):
-    data = {'PER': 0, 'PBR': 0, 'Marcap': 0, 'ROE': 'N/A', 'OperatingProfit': 'N/A', 'Type': 'KR', 'Opinion': ''}
+    data = {
+        'PER': 0, 'PBR': 0, 'PSR': 0, 'ROE': 'N/A', 
+        'Marcap': 0, 'OperatingProfit': 'N/A', 
+        'Revenue_Trend': [], # 매출 추이 저장
+        'Type': 'KR', 'Opinion': ''
+    }
     
     if code.isdigit():
         data['Type'] = 'KR'
-        # ETF 식별 (내장 리스트 확인)
-        is_etf = False
-        for item in STATIC_KRX_DATA:
-            if item['Code'] == code and ('KODEX' in item['Name'] or 'TIGER' in item['Name']):
-                is_etf = True; break
-        
-        # 이름에 ETF 키워드가 있거나 내장 리스트에 있으면 ETF로 간주
-        if is_etf:
-            data['Type'] = 'ETF'
-            data['Opinion'] = "ℹ️ ETF는 여러 종목을 묶은 펀드이므로 영업이익/PER 분석을 생략합니다."
-            return data
+        # ETF 예외처리
+        if any(x in code for x in ['069500', '122630', '252670', '114800', '360750']):
+            data['Type'] = 'ETF'; data['Opinion'] = "ℹ️ ETF는 개별 기업 분석을 생략합니다."; return data
 
         try:
             url = f"https://finance.naver.com/item/main.naver?code={code}"
@@ -122,11 +119,13 @@ def get_fundamental_data(code):
             response = requests.get(url, headers=headers)
             soup = BeautifulSoup(response.text, 'html.parser')
             
+            # 1. 기본 지표
             try: data['PER'] = float(soup.select_one('#_per').text.replace(',', ''))
             except: pass
             try: data['PBR'] = float(soup.select_one('#_pbr').text.replace(',', ''))
             except: pass
             
+            # 2. 시가총액
             try:
                 cap_text = soup.select_one('#_market_sum').text
                 parts = cap_text.split('조')
@@ -135,19 +134,34 @@ def get_fundamental_data(code):
                 data['Marcap'] = trillion + billion
             except: pass
 
+            # 3. [신규] 매출액 추이 & 영업이익 & PSR 계산
             try:
                 dfs = pd.read_html(response.text, match='매출액')
                 if dfs:
-                    fin_df = dfs[-1]
-                    target_col = -2
+                    fin_df = dfs[-1] # 기업실적분석 테이블
+                    
+                    # 매출액 행 가져오기
+                    rev_row = fin_df[fin_df.iloc[:, 0].str.contains('매출액', na=False)]
+                    if not rev_row.empty:
+                        # 최근 4개년(분기 제외, 연간 기준) 데이터 추출
+                        # 보통 테이블 앞쪽 컬럼들이 연간 실적임
+                        recent_revs = rev_row.iloc[0, 1:5].tolist() # 최근 4년치
+                        data['Revenue_Trend'] = [str(x) for x in recent_revs if pd.notna(x)]
+                        
+                        # 최근 매출액(작년 확정 or 올해 추정)으로 PSR 계산
+                        last_revenue = float(str(recent_revs[-1]).replace(',', '')) * 100000000 # 억 단위 보정
+                        if last_revenue > 0 and data['Marcap'] > 0:
+                            data['PSR'] = round(data['Marcap'] / last_revenue, 2)
+
+                    # 영업이익
                     op_row = fin_df[fin_df.iloc[:, 0].str.contains('영업이익', na=False)]
                     if not op_row.empty: 
-                        val = op_row.iloc[0, target_col]
-                        data['OperatingProfit'] = f"{val} 억원"
+                        data['OperatingProfit'] = str(op_row.iloc[0, -2]) + " 억원" # 최근 결산/추정값
+
+                    # ROE
                     roe_row = fin_df[fin_df.iloc[:, 0].str.contains('ROE', na=False)]
                     if not roe_row.empty: 
-                        val = roe_row.iloc[0, target_col]
-                        data['ROE'] = f"{val} %"
+                        data['ROE'] = str(roe_row.iloc[0, -2]) + " %"
             except: pass
         except: pass
 
@@ -160,12 +174,19 @@ def get_fundamental_data(code):
             
             data['PER'] = info.get('trailingPE', 0)
             data['PBR'] = info.get('priceToBook', 0)
+            data['PSR'] = info.get('priceToSalesTrailing12Months', 0)
             data['Marcap'] = info.get('marketCap', 0)
             if info.get('returnOnEquity'): data['ROE'] = f"{info.get('returnOnEquity')*100:.2f} %"
-            if info.get('totalRevenue') and info.get('operatingMargins'):
-                op_val = info.get('totalRevenue') * info.get('operatingMargins')
-                data['OperatingProfit'] = f"{op_val / 1000000000:.2f} B ($)"
+            
+            # 매출 추이 (야후는 간단히 작년/올해만 가져오거나 생략)
+            if info.get('totalRevenue'):
+                data['Revenue_Trend'] = [f"{info.get('totalRevenue')/1000000000:.2f}B"]
+                
+            if info.get('operatingMargins'):
+                op = info.get('totalRevenue', 0) * info.get('operatingMargins', 0)
+                data['OperatingProfit'] = f"{op / 1000000000:.2f} B ($)"
         except: pass
+        
     return data
 
 # ---------------------------------------------------------
@@ -452,4 +473,5 @@ if selected_code:
             
             fig.update_layout(height=900, xaxis_rangeslider_visible=False, showlegend=False)
             st.plotly_chart(fig, use_container_width=True)
+
 
