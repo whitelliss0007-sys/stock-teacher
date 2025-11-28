@@ -125,15 +125,13 @@ def get_stock_data(code):
                 yf_ticker = f"{code}.KS" if code.isdigit() else code
                 df = yf.download(yf_ticker, start=start, end=end, progress=False)
                 
-                # [중요] 야후 데이터 컬럼 평탄화 (MultiIndex 해결)
+                # [중요] 야후 데이터 컬럼 평탄화
                 if isinstance(df.columns, pd.MultiIndex):
-                    try:
-                        df.columns = df.columns.get_level_values(0)
-                    except:
-                        pass # 이미 평탄화 되었거나 구조가 다름
+                    try: df.columns = df.columns.get_level_values(0)
+                    except: pass
             except: pass
 
-        # 데이터 정리 (빈 값 제거)
+        # 데이터 정리
         df = df.dropna(subset=['Close'])
         
         if df.empty or len(df) < 60: 
@@ -143,19 +141,12 @@ def get_stock_data(code):
     except Exception as e: return None, str(e)
 
 # ---------------------------------------------------------
-# 3. 상세 분석 로직 (에러 방지 처리)
+# 3. 상세 분석 로직 (1차 에러 방지)
 # ---------------------------------------------------------
 def analyze_advanced(df, fund_data):
-    # [안전장치] 컬럼 미리 생성 (계산 실패시 에러 방지용)
-    df['ma5'] = df['Close']
-    df['ma20'] = df['Close']
-    df['ma60'] = df['Close']
-    df['rsi'] = 50.0
-    df['macd'] = 0.0
-    df['macd_signal'] = 0.0
-    df['macd_diff'] = 0.0
-    df['bb_h'] = df['Close']
-    df['bb_l'] = df['Close']
+    # [1차 안전장치] 컬럼 미리 생성
+    for col in ['ma5', 'ma20', 'ma60', 'rsi', 'macd', 'macd_signal', 'macd_diff', 'bb_h', 'bb_l']:
+        df[col] = 0.0
 
     # 실제 계산 시도
     try:
@@ -173,10 +164,11 @@ def analyze_advanced(df, fund_data):
         df['bb_h'] = bb.bollinger_hband()
         df['bb_l'] = bb.bollinger_lband()
     except:
-        pass # 계산 실패해도 위에서 만든 기본값으로 차트는 그려짐
+        pass # 계산 실패해도 위에서 만든 0.0 값으로 차트는 그려짐
 
-    # 마지막 값 가져오기 (NaN 방지)
-    df = df.fillna(method='ffill').fillna(0)
+    # NaN 제거
+    df = df.fillna(0)
+    
     curr = df.iloc[-1]
     prev = df.iloc[-2]
     
@@ -187,12 +179,12 @@ def analyze_advanced(df, fund_data):
     report.append("#### 1️⃣ 추세 분석")
     if curr['ma5'] > curr['ma20']:
         trend_score += 15
-        report.append(f"- ✅ **단기 상승 (+15점)**: 5일선 > 20일선. 매수세 우위.")
+        report.append(f"- ✅ **단기 상승 (+15점)**: 5일선 > 20일선.")
         if prev['ma5'] <= prev['ma20']:
             trend_score += 10
             report.append(f"- 🔥 **골든크로스 (+10점)**: 상승 전환 신호!")
     else:
-        report.append(f"- 🔻 **단기 하락 (0점)**: 5일선 < 20일선. 매도세 우위.")
+        report.append(f"- 🔻 **단기 하락 (0점)**: 5일선 < 20일선.")
     
     if curr['Close'] > curr['ma60']:
         trend_score += 5
@@ -202,9 +194,9 @@ def analyze_advanced(df, fund_data):
     report.append("\n#### 2️⃣ 가격 위치")
     if curr['Close'] <= curr['bb_l'] * 1.02:
         price_score += 15
-        report.append(f"- ✅ **바닥권 (+15점)**: 밴드 하단. 반등 기대.")
+        report.append(f"- ✅ **바닥권 (+15점)**: 반등 기대.")
     elif curr['Close'] >= curr['bb_h'] * 0.98:
-        report.append(f"- ⚠️ **천장권 (0점)**: 밴드 상단. 조정 주의.")
+        report.append(f"- ⚠️ **천장권 (0점)**: 조정 주의.")
     else:
         price_score += 5
         report.append(f"- ➖ **중간 지대 (+5점)**: 허리 구간.")
@@ -213,9 +205,9 @@ def analyze_advanced(df, fund_data):
     report.append("\n#### 3️⃣ 투자 심리")
     if curr['rsi'] < 30:
         timing_score += 20
-        report.append(f"- 🚀 **과매도 (RSI {curr['rsi']:.0f}) (+20점)**: 공포 구간. 저점 매수 기회.")
+        report.append(f"- 🚀 **과매도 (RSI {curr['rsi']:.0f}) (+20점)**: 저점 매수 기회.")
     elif curr['rsi'] > 70:
-        report.append(f"- 😱 **과매수 (RSI {curr['rsi']:.0f}) (0점)**: 과열 구간. 추격 매수 금지.")
+        report.append(f"- 😱 **과매수 (RSI {curr['rsi']:.0f}) (0점)**: 추격 매수 금지.")
     else:
         timing_score += 5
         report.append(f"- ➖ **안정 (RSI {curr['rsi']:.0f}) (+5점)**: 심리 안정적.")
@@ -233,16 +225,16 @@ def analyze_advanced(df, fund_data):
         if per > 0:
             if per < 10: 
                 fund_score += 10
-                report.append(f"- ✅ **저평가 (PER {per}) (+10점)**: 실적 대비 저렴.")
+                report.append(f"- ✅ **저평가 (PER {per}) (+10점)**")
             elif per > 50:
-                 report.append(f"- ⚠️ **고평가 (PER {per}) (0점)**: 미래 기대 반영됨.")
+                 report.append(f"- ⚠️ **고평가 (PER {per}) (0점)**")
             else:
                  fund_score += 5
-                 report.append(f"- ➖ **적정 (PER {per}) (+5점)**: 적정 주가.")
+                 report.append(f"- ➖ **적정 (PER {per}) (+5점)**")
             
             if pbr < 1.0:
                 fund_score += 10
-                report.append(f"- ✅ **자산주 (PBR {pbr}) (+10점)**: 청산가치보다 저렴.")
+                report.append(f"- ✅ **자산주 (PBR {pbr}) (+10점)**")
                 
             if "억원" in str(op) and not str(op).startswith("-"):
                  report.append(f"- ✅ **영업이익 흑자**: {op}")
@@ -256,7 +248,7 @@ def analyze_advanced(df, fund_data):
 # 4. 화면 구성
 # ---------------------------------------------------------
 st.title("👨‍🏫 AI 주식 과외 선생님")
-st.caption("비상 데이터 회로 + 에러 방지 시스템 탑재")
+st.caption("2중 에러 방지 시스템 탑재")
 
 user_input = st.text_input("🔍 종목 검색 (예: 현대차, 삼성전자, QQQ)", "")
 
@@ -295,7 +287,6 @@ if st.button("분석 시작", type="primary") and user_input:
         if err:
             st.error(f"❌ 분석 실패: {err}")
         else:
-            # 안전장치가 적용된 분석 함수 호출
             score, report, df, ts, ps, tis, fs = analyze_advanced(raw_df, fund_data)
             curr_price = df.iloc[-1]['Close']
             
@@ -332,12 +323,19 @@ if st.button("분석 시작", type="primary") and user_input:
             st.write("---")
             st.subheader("📈 4단 정밀 차트")
             
+            # [2차 안전장치] 차트 그리기 전 데이터 검증
+            # 만약 위에서 1차 안전장치가 뚫렸더라도 여기서 강제로 0을 채움
+            if 'macd_diff' not in df.columns: df['macd_diff'] = 0
+            if 'ma20' not in df.columns: df['ma20'] = 0
+            if 'ma60' not in df.columns: df['ma60'] = 0
+            if 'rsi' not in df.columns: df['rsi'] = 50
+            if 'Volume' not in df.columns: df['Volume'] = 0
+
             # 차트 그리기
             fig = make_subplots(rows=4, cols=1, shared_xaxes=True, vertical_spacing=0.03, 
                                 row_heights=[0.5, 0.15, 0.15, 0.2],
                                 subplot_titles=("주가", "거래량", "MACD", "RSI"))
             
-            # 만약 데이터가 없더라도 0으로 채워져 있어 에러가 안남
             fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='캔들'), row=1, col=1)
             fig.add_trace(go.Scatter(x=df.index, y=df['ma20'], line=dict(color='blue', width=1), name='20일선'), row=1, col=1)
             fig.add_trace(go.Scatter(x=df.index, y=df['ma60'], line=dict(color='green', width=1), name='60일선'), row=1, col=1)
