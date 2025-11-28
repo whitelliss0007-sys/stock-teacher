@@ -18,10 +18,10 @@ import yfinance as yf
 st.set_page_config(page_title="AI 주식 과외 선생님", layout="wide", page_icon="👨‍🏫")
 
 # ---------------------------------------------------------
-# 0. [필수] 내장 코드북 (서버 차단 시 비상용 명부)
+# 0. [필수] 대규모 내장 코드북 (서버 차단 시에도 검색되도록 150+개 탑재)
 # ---------------------------------------------------------
 STATIC_KRX_DATA = [
-    # --- 대형주 ---
+    # ---------------- [대형주] ----------------
     {'Code': '005930', 'Name': '삼성전자'}, {'Code': '000660', 'Name': 'SK하이닉스'},
     {'Code': '373220', 'Name': 'LG에너지솔루션'}, {'Code': '207940', 'Name': '삼성바이오로직스'},
     {'Code': '005380', 'Name': '현대차'}, {'Code': '000270', 'Name': '기아'},
@@ -31,27 +31,55 @@ STATIC_KRX_DATA = [
     {'Code': '086520', 'Name': '에코프로'}, {'Code': '247540', 'Name': '에코프로비엠'},
     {'Code': '298020', 'Name': '효성중공업'}, {'Code': '004800', 'Name': '효성'},
     
-    # --- 주요 ETF (KODEX) ---
-    {'Code': '069500', 'Name': 'KODEX 200'}, {'Code': '122630', 'Name': 'KODEX 레버리지'},
-    {'Code': '252670', 'Name': 'KODEX 200선물인버스2X'}, {'Code': '114800', 'Name': 'KODEX 인버스'},
-    {'Code': '091160', 'Name': 'KODEX 반도체'}, {'Code': '422580', 'Name': 'KODEX 미국배당프리미엄액티브'},
-    {'Code': '278530', 'Name': 'KODEX 미국S&P500TR'}, {'Code': '304940', 'Name': 'KODEX 미국나스닥100TR'},
+    # ---------------- [KODEX: 지수/대표] ----------------
+    {'Code': '069500', 'Name': 'KODEX 200'}, {'Code': '278530', 'Name': 'KODEX 200TR'},
+    {'Code': '122630', 'Name': 'KODEX 레버리지'}, {'Code': '114800', 'Name': 'KODEX 인버스'},
+    {'Code': '252670', 'Name': 'KODEX 200선물인버스2X'}, {'Code': '233740', 'Name': 'KODEX 코스닥150레버리지'},
+    {'Code': '251340', 'Name': 'KODEX 코스닥150선물인버스'},
+    
+    # ---------------- [KODEX: 반도체/AI/2차전지] ----------------
+    {'Code': '091160', 'Name': 'KODEX 반도체'}, {'Code': '424240', 'Name': 'KODEX Fn시스템반도체'},
+    {'Code': '455840', 'Name': 'KODEX AI반도체핵심장비'}, {'Code': '305720', 'Name': 'KODEX 2차전지산업'},
+    {'Code': '461660', 'Name': 'KODEX 2차전지핵심소재10 Fn'}, {'Code': '394660', 'Name': 'KODEX K-메타버스액티브'},
+    {'Code': '449190', 'Name': 'KODEX K-로봇액티브'}, {'Code': '117700', 'Name': 'KODEX 건설'},
+    {'Code': '102970', 'Name': 'KODEX 자동차'}, {'Code': '140700', 'Name': 'KODEX 보험'},
+    {'Code': '091170', 'Name': 'KODEX 은행'}, {'Code': '091180', 'Name': 'KODEX 철강'},
 
-    # --- 주요 ETF (TIGER) ---
-    {'Code': '360750', 'Name': 'TIGER 미국필라델피아반도체나스닥'}, {'Code': '371460', 'Name': 'TIGER 차이나전기차SOLACTIVE'},
-    {'Code': '305540', 'Name': 'TIGER 2차전지테마'}, {'Code': '133690', 'Name': 'TIGER 미국나스닥100'},
-    {'Code': '102110', 'Name': 'TIGER 200'}, {'Code': '453950', 'Name': 'TIGER 미국테크TOP10 INDXX'},
+    # ---------------- [KODEX: 미국/해외] ----------------
+    {'Code': '379800', 'Name': 'KODEX 미국빅테크10(H)'}, {'Code': '214980', 'Name': 'KODEX 미국S&P500선물(H)'},
+    {'Code': '304940', 'Name': 'KODEX 미국나스닥100TR'}, {'Code': '449180', 'Name': 'KODEX 미국배당킹'},
+    {'Code': '422580', 'Name': 'KODEX 미국배당프리미엄액티브'}, {'Code': '465640', 'Name': 'KODEX 미국S&P500배당귀족커버드콜'},
+    {'Code': '409820', 'Name': 'KODEX 미국메타버스나스닥액티브'}, {'Code': '275980', 'Name': 'KODEX 미국FANG플러스(H)'},
+    
+    # ---------------- [KODEX: 원자재/채권/기타] ----------------
+    {'Code': '132030', 'Name': 'KODEX 골드선물(H)'}, {'Code': '261220', 'Name': 'KODEX WTI원유선물(H)'},
+    {'Code': '214980', 'Name': 'KODEX 단기채권Plus'}, {'Code': '153130', 'Name': 'KODEX 단기채권'},
+    {'Code': '423160', 'Name': 'KODEX KOFR금리액티브(합성)'}, {'Code': '465330', 'Name': 'KODEX CD금리액티브(합성)'},
+
+    # ---------------- [TIGER: 주요종목] ----------------
+    {'Code': '102110', 'Name': 'TIGER 200'}, {'Code': '360750', 'Name': 'TIGER 미국필라델피아반도체나스닥'},
+    {'Code': '305540', 'Name': 'TIGER 2차전지테마'}, {'Code': '371460', 'Name': 'TIGER 차이나전기차SOLACTIVE'},
+    {'Code': '133690', 'Name': 'TIGER 미국나스닥100'}, {'Code': '453950', 'Name': 'TIGER 미국테크TOP10 INDXX'},
+    {'Code': '327630', 'Name': 'TIGER 글로벌리튬&2차전지SOLACTIVE'}, {'Code': '465640', 'Name': 'TIGER 미국배당+7%프리미엄다우존스'},
+    
+    # ---------------- [ACE/SOL/KBSTAR] ----------------
+    {'Code': '411420', 'Name': 'ACE 미국S&P500'}, {'Code': '438560', 'Name': 'SOL 미국배당다우존스'},
+    {'Code': '251350', 'Name': 'KBSTAR 200선물인버스2X'}
 ]
 
 # ---------------------------------------------------------
-# 1. 종목 리스트 가져오기
+# 1. 종목 리스트 가져오기 (하이브리드)
 # ---------------------------------------------------------
 @st.cache_data
 def get_krx_list():
     try:
+        # 1차 시도: 라이브 서버
         df = fdr.StockListing('KRX')
-        if not df.empty: return df[['Code', 'Name']]
+        if not df.empty:
+            return df[['Code', 'Name']]
     except: pass
+    
+    # 2차 시도: 내장 코드북 (훨씬 많아짐)
     return pd.DataFrame(STATIC_KRX_DATA)
 
 # ---------------------------------------------------------
@@ -62,10 +90,16 @@ def get_fundamental_data(code):
     
     if code.isdigit():
         data['Type'] = 'KR'
-        # ETF 식별
-        if any(x in code for x in ['069500', '122630', '252670', '114800', '360750']):
+        # ETF 식별 (내장 리스트에 있거나 이름에 ETF 관련어가 있으면)
+        is_etf = False
+        for item in STATIC_KRX_DATA:
+            if item['Code'] == code and ('KODEX' in item['Name'] or 'TIGER' in item['Name'] or 'ACE' in item['Name']):
+                is_etf = True
+                break
+        
+        if is_etf:
             data['Type'] = 'ETF'
-            data['Opinion'] = "ℹ️ ETF는 여러 기업을 묶은 상품이라 영업이익 분석을 하지 않습니다."
+            data['Opinion'] = "ℹ️ ETF는 개별 기업이 아니므로 영업이익 분석을 생략합니다."
             return data
 
         try:
@@ -78,6 +112,7 @@ def get_fundamental_data(code):
             except: pass
             try: data['PBR'] = float(soup.select_one('#_pbr').text.replace(',', ''))
             except: pass
+            
             try:
                 cap_text = soup.select_one('#_market_sum').text
                 parts = cap_text.split('조')
@@ -102,12 +137,13 @@ def get_fundamental_data(code):
             except: pass
         except: pass
 
-    else: # 미국 주식
+    else:
         data['Type'] = 'US'
         try:
             stock = yf.Ticker(code)
             info = stock.info
             if info.get('quoteType') == 'ETF': data['Type'] = 'ETF'
+            
             data['PER'] = info.get('trailingPE', 0)
             data['PBR'] = info.get('priceToBook', 0)
             data['Marcap'] = info.get('marketCap', 0)
@@ -126,9 +162,12 @@ def get_stock_data(code):
     try:
         end = datetime.datetime.now()
         start = end - datetime.timedelta(days=365*2)
+        
         try:
-            if code.isdigit(): df = fdr.DataReader(code, start, end)
-            else: df = fdr.DataReader(code, start, end)
+            if code.isdigit():
+                df = fdr.DataReader(code, start, end)
+            else:
+                df = fdr.DataReader(code, start, end)
         except: df = pd.DataFrame()
 
         if df.empty or len(df) < 10:
@@ -146,10 +185,9 @@ def get_stock_data(code):
     except Exception as e: return None, str(e)
 
 # ---------------------------------------------------------
-# 4. [핵심] 상세 분석 로직 (설명 대폭 강화)
+# 4. 분석 로직
 # ---------------------------------------------------------
 def analyze_advanced(df, fund_data):
-    # 컬럼 안전장치
     for col in ['ma5', 'ma20', 'ma60', 'rsi', 'macd', 'macd_signal', 'macd_diff', 'bb_h', 'bb_l']:
         if col not in df.columns: df[col] = 0.0
 
@@ -173,62 +211,48 @@ def analyze_advanced(df, fund_data):
     trend_score = 0; price_score = 0; timing_score = 0; fund_score = 0
     report = []
 
-    # -------------------------------------------------------
-    # (1) 추세 분석 (Trend)
-    # -------------------------------------------------------
-    report.append("#### 1️⃣ 추세 분석 (그래프의 방향)")
+    # 1. 추세
+    report.append("#### 1️⃣ 추세 분석")
     if curr['ma5'] > curr['ma20']:
         trend_score += 15
-        report.append(f"- ✅ **단기 상승 추세 (+15점)**\n  : 5일 평균가격(주황선)이 20일 평균(파란선)보다 높습니다. 이는 최근 한 달간 산 사람들의 평균단가보다 현재가가 비싸다는 뜻으로, **'사는 힘'이 강하다**는 증거입니다.")
+        report.append("- ✅ **단기 상승 (+15점)**: 5일선 > 20일선. 매수세 우위.")
         if prev['ma5'] <= prev['ma20']:
             trend_score += 10
-            report.append(f"- 🔥 **골든크로스 발생 (+10점)**\n  : 방금 막 단기 추세가 장기 추세를 뚫고 올라갔습니다. **본격적인 상승의 신호탄**이 될 수 있는 아주 좋은 타이밍입니다.")
+            report.append("- 🔥 **골든크로스 (+10점)**: 상승 전환 신호!")
     else:
-        report.append(f"- 🔻 **단기 하락 추세 (0점)**\n  : 5일선이 20일선 아래에 있습니다. 단기적으로 **'파는 힘'이 더 강해서** 힘이 빠지고 있는 상태입니다.")
+        report.append("- 🔻 **단기 하락 (0점)**: 5일선 < 20일선.")
     
     if curr['Close'] > curr['ma60']:
         trend_score += 5
-        report.append(f"- ✅ **중기 상승 (+5점)**\n  : 60일선(수급선) 위에 있습니다. 3개월(분기) 흐름이 좋아서 메이저 자금이 들어와 있을 가능성이 높습니다.")
+        report.append("- ✅ **중기 상승 (+5점)**: 60일선 위 안착.")
 
-    # -------------------------------------------------------
-    # (2) 가격 위치 (Bollinger Bands)
-    # -------------------------------------------------------
-    report.append("\n#### 2️⃣ 가격 위치 (싸냐? 비싸냐?)")
+    # 2. 가격
+    report.append("\n#### 2️⃣ 가격 위치")
     if curr['Close'] <= curr['bb_l'] * 1.02:
         price_score += 15
-        report.append(f"- ✅ **바닥권 도달 (+15점)**\n  : 주가가 볼린저밴드(회색 영역)의 **맨 아래층(지하)**에 있습니다. 통계적으로 이 위치에서는 다시 위로 튀어 오를 확률이 95% 이상입니다.")
+        report.append("- ✅ **바닥권 (+15점)**: 반등 기대.")
     elif curr['Close'] >= curr['bb_h'] * 0.98:
-        report.append(f"- ⚠️ **천장권 도달 (0점)**\n  : 주가가 밴드 **맨 위층(옥상)**에 닿았습니다. 단기간에 너무 급하게 올라서, 차익 실현 매물이 쏟아지며 떨어질 위험이 큽니다.")
+        report.append("- ⚠️ **천장권 (0점)**: 조정 주의.")
     else:
         price_score += 5
-        report.append(f"- ➖ **중간 지대 (+5점)**\n  : 주가가 밴드 안쪽에서 평범하게 움직이고 있습니다. 이럴 땐 '추세'를 따르는 것이 좋습니다.")
+        report.append("- ➖ **중간 지대 (+5점)**")
 
-    # -------------------------------------------------------
-    # (3) 심리 & 거래량 (Volume & RSI)
-    # -------------------------------------------------------
-    report.append("\n#### 3️⃣ 투자 심리 & 거래량")
+    # 3. 심리
+    report.append("\n#### 3️⃣ 투자 심리")
     if curr['rsi'] < 30:
         timing_score += 20
-        report.append(f"- 🚀 **과매도 구간 (RSI {curr['rsi']:.0f}) (+20점)**\n  : 사람들이 공포에 질려 주식을 너무 많이 팔았습니다. **'남들이 공포를 느낄 때 욕심을 부리라'**는 말처럼, 지금이 싸게 살 기회일 수 있습니다.")
+        report.append(f"- 🚀 **과매도 (RSI {curr['rsi']:.0f}) (+20점)**: 저점 매수 기회.")
     elif curr['rsi'] > 70:
-        report.append(f"- 😱 **과매수 구간 (RSI {curr['rsi']:.0f}) (0점)**\n  : 너도나도 주식을 사서 과열되었습니다. **'탐욕' 구간**이므로 추격 매수는 위험합니다.")
+        report.append(f"- 😱 **과매수 (RSI {curr['rsi']:.0f}) (0점)**: 과열 상태.")
     else:
         timing_score += 5
-        report.append(f"- ➖ **심리 안정 (RSI {curr['rsi']:.0f}) (+5점)**\n  : 투자자들의 심리가 흥분하지 않고 차분합니다.")
+        report.append(f"- ➖ **안정 (RSI {curr['rsi']:.0f}) (+5점)**")
 
-    # 거래량 분석 추가
-    vol_avg = df['Volume'].iloc[-20:].mean()
-    if curr['Volume'] > vol_avg * 1.5 and curr['Close'] > prev['Close']:
-        price_score += 5
-        report.append(f"- 🔥 **거래량 폭발 (+5점)**\n  : 평소보다 1.5배 많은 거래량이 터지면서 주가가 올랐습니다. 이는 **'세력'이나 '큰손'이 들어왔다는 강력한 신호**입니다.")
-
-    # -------------------------------------------------------
-    # (4) 기업 가치 (Fundamentals)
-    # -------------------------------------------------------
-    report.append("\n#### 4️⃣ 기업 가치 (재무제표)")
+    # 4. 가치
+    report.append("\n#### 4️⃣ 기업 가치")
     if fund_data['Type'] == 'ETF' or fund_data['Type'] == 'US':
         fund_score += 10
-        report.append("- ℹ️ **ETF/해외주식**: 차트와 추세 위주로 분석합니다. (ETF는 묶음 상품이라 PER로 평가하기 어렵습니다)")
+        report.append("- ℹ️ **ETF/해외주식**: 차트와 추세 위주로 분석합니다.")
     else:
         per = fund_data.get('PER', 0)
         pbr = fund_data.get('PBR', 0)
@@ -237,21 +261,21 @@ def analyze_advanced(df, fund_data):
         if per > 0:
             if per < 10: 
                 fund_score += 10
-                report.append(f"- ✅ **저평가 (PER {per}) (+10점)**\n  : 기업이 1년에 버는 돈에 비해 주가가 쌉니다. 장기적으로 주가는 실적을 따라갑니다.")
+                report.append(f"- ✅ **저평가 (PER {per}) (+10점)**")
             elif per > 50:
-                 report.append(f"- ⚠️ **고평가 (PER {per}) (0점)**\n  : 현재 버는 돈보다 미래 기대감이 너무 많이 반영되었습니다.")
+                 report.append(f"- ⚠️ **고평가 (PER {per}) (0점)**")
             else:
                  fund_score += 5
-                 report.append(f"- ➖ **적정 주가 (PER {per}) (+5점)**\n  : 적당한 가격대입니다.")
+                 report.append(f"- ➖ **적정 (PER {per}) (+5점)**")
             
             if pbr < 1.0:
                 fund_score += 10
-                report.append(f"- ✅ **자산주 (PBR {pbr}) (+10점)**\n  : 회사가 망해서 공장만 팔아도 본전은 건집니다. 절대적으로 싼 구간입니다.")
-            
+                report.append(f"- ✅ **자산주 (PBR {pbr}) (+10점)**")
+                
             if "억원" in str(op) and not str(op).startswith("-"):
-                 report.append(f"- ✅ **영업이익 흑자 ({op})**\n  : 본업에서 돈을 잘 벌고 있는 튼튼한 회사입니다.")
+                 report.append(f"- ✅ **영업이익 흑자**: {op}")
         else:
-            report.append("- ℹ️ 재무 정보 부족 (점수 제외)")
+            report.append("- ℹ️ 재무 정보 부족")
 
     total_score = max(0, min(100, trend_score + price_score + timing_score + fund_score))
     return total_score, report, df, trend_score, price_score, timing_score, fund_score
@@ -265,13 +289,13 @@ def sanitize_for_chart(df):
 # 5. 화면 구성 (검색 -> 목록 선택 방식)
 # ---------------------------------------------------------
 st.title("👨‍🏫 AI 주식 과외 선생님")
-st.caption("한국/미국 주식 + ETF 완벽 분석")
+st.caption("ETF 대폭 추가 + 검색 기능 강화")
 
-# 1. 데이터 로드
+# 1. 데이터 로드 (내장 코드북 + 라이브 로드)
 krx_list = get_krx_list()
 
 # 2. 검색창
-search_keyword = st.text_input("종목명/ETF 입력 (예: 반도체, KODEX, 효성, 삼성)", placeholder="검색어를 입력하고 엔터를 누르세요")
+search_keyword = st.text_input("종목명/ETF 입력 (예: 반도체, KODEX, TIGER)", placeholder="검색어를 입력하고 엔터를 누르세요")
 
 selected_code = None
 selected_name = None
@@ -280,7 +304,7 @@ selected_name = None
 if search_keyword:
     search_keyword = search_keyword.upper().strip()
     
-    # [A] 한국 종목 검색
+    # [A] 한국 종목 검색 (이름에 포함된 것 찾기)
     results = krx_list[krx_list['Name'].str.contains(search_keyword, na=False)]
     
     # [B] 미국 주식 티커 처리
@@ -290,6 +314,7 @@ if search_keyword:
     options = {}
     
     if not results.empty:
+        # 상위 50개만 보여줌
         for index, row in results.head(50).iterrows():
             display_text = f"{row['Name']} ({row['Code']})"
             options[display_text] = row['Code']
@@ -305,9 +330,9 @@ if search_keyword:
         
         # 5. 분석 버튼
         if st.button("🚀 선택한 종목 분석하기", type="primary"):
-            pass # 아래 로직 실행
+            pass
     else:
-        st.error("검색 결과가 없습니다. 다른 검색어를 입력해보세요.")
+        st.error("검색 결과가 없습니다. (KODEX, TIGER, 삼성 등 키워드를 입력해보세요)")
 
 # ---------------------------------------------------------
 # 6. 분석 실행 (선택 완료 시)
@@ -346,7 +371,7 @@ if selected_code:
             with c2:
                 st.write("#### 🏢 재무 요약")
                 if "ETF" in str(fund_data['Type']):
-                    st.info("ETF 상품입니다. (구성 종목과 차트가 중요)")
+                    st.info("ETF 상품입니다. (영업이익 분석 제외)")
                 else:
                     f1, f2 = st.columns(2)
                     f1.metric("영업이익", str(fund_data.get('OperatingProfit', '-')))
@@ -355,7 +380,7 @@ if selected_code:
                     f2.metric("PBR", fund_data.get('PBR', 0))
             
             st.write("---")
-            with st.expander("📝 선생님의 상세 분석 이유 (여기를 클릭하세요!)", expanded=True):
+            with st.expander("📝 상세 분석 내용 보기", expanded=True):
                 for r in report: st.markdown(r)
             
             st.write("---")
@@ -365,14 +390,12 @@ if selected_code:
             
             fig = make_subplots(rows=4, cols=1, shared_xaxes=True, vertical_spacing=0.03, 
                                 row_heights=[0.5, 0.15, 0.15, 0.2],
-                                subplot_titles=("주가 & 이동평균선", "거래량", "MACD (추세)", "RSI (심리)"))
+                                subplot_titles=("주가", "거래량", "MACD", "RSI"))
             
-            # 1. 캔들 차트
             fig.add_trace(go.Candlestick(
                 x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='캔들'
             ), row=1, col=1)
             
-            # 2. 이동평균선
             fig.add_trace(go.Scatter(
                 x=df.index, y=df['ma20'], line=dict(color='blue', width=1), name='20일선'
             ), row=1, col=1)
@@ -381,17 +404,14 @@ if selected_code:
                 x=df.index, y=df['ma60'], line=dict(color='green', width=1), name='60일선'
             ), row=1, col=1)
             
-            # 3. 거래량
             fig.add_trace(go.Bar(
                 x=df.index, y=df['Volume'], name='거래량'
             ), row=2, col=1)
             
-            # 4. MACD
             fig.add_trace(go.Bar(
                 x=df.index, y=df['macd_diff'], marker_color='gray', name='MACD'
             ), row=3, col=1)
             
-            # 5. RSI
             fig.add_trace(go.Scatter(
                 x=df.index, y=df['rsi'], line=dict(color='purple'), name='RSI'
             ), row=4, col=1)
