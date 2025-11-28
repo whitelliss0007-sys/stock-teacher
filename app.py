@@ -18,16 +18,62 @@ import yfinance as yf
 st.set_page_config(page_title="AI 주식 과외 선생님", layout="wide", page_icon="👨‍🏫")
 
 # ---------------------------------------------------------
-# 1. 대한민국 전 종목 리스트 가져오기 (캐싱)
+# 0. [필수] 내장 코드북 (서버 차단 시 비상용 명부)
+# ---------------------------------------------------------
+# KRX 리스트 다운로드가 실패할 경우를 대비해, 주요 종목을 미리 적어둡니다.
+STATIC_KRX_DATA = [
+    # --- 대형주 ---
+    {'Code': '005930', 'Name': '삼성전자'}, {'Code': '000660', 'Name': 'SK하이닉스'},
+    {'Code': '373220', 'Name': 'LG에너지솔루션'}, {'Code': '207940', 'Name': '삼성바이오로직스'},
+    {'Code': '005380', 'Name': '현대차'}, {'Code': '000270', 'Name': '기아'},
+    {'Code': '068270', 'Name': '셀트리온'}, {'Code': '005490', 'Name': 'POSCO홀딩스'},
+    {'Code': '035420', 'Name': 'NAVER'}, {'Code': '035720', 'Name': '카카오'},
+    {'Code': '006400', 'Name': '삼성SDI'}, {'Code': '051910', 'Name': 'LG화학'},
+    {'Code': '086520', 'Name': '에코프로'}, {'Code': '247540', 'Name': '에코프로비엠'},
+    {'Code': '066970', 'Name': '엘앤에프'}, {'Code': '028300', 'Name': 'HLB'},
+    {'Code': '034020', 'Name': '두산에너빌리티'}, {'Code': '012450', 'Name': '한화에어로스페이스'},
+    {'Code': '298020', 'Name': '효성중공업'}, {'Code': '298050', 'Name': '효성첨단소재'},
+    {'Code': '298000', 'Name': '효성티앤씨'}, {'Code': '004800', 'Name': '효성'},
+    
+    # --- 주요 ETF (KODEX) ---
+    {'Code': '069500', 'Name': 'KODEX 200'}, {'Code': '122630', 'Name': 'KODEX 레버리지'},
+    {'Code': '252670', 'Name': 'KODEX 200선물인버스2X'}, {'Code': '114800', 'Name': 'KODEX 인버스'},
+    {'Code': '423160', 'Name': 'KODEX KOFR금리액티브(합성)'}, {'Code': '278530', 'Name': 'KODEX 미국S&P500TR'},
+    {'Code': '304940', 'Name': 'KODEX 미국나스닥100TR'}, {'Code': '091160', 'Name': 'KODEX 반도체'},
+    {'Code': '422580', 'Name': 'KODEX 미국배당프리미엄액티브'}, {'Code': '379800', 'Name': 'KODEX 미국빅테크10(H)'},
+    {'Code': '278540', 'Name': 'KODEX 미국S&P500(H)'}, {'Code': '214980', 'Name': 'KODEX 단기채권Plus'},
+    {'Code': '261220', 'Name': 'KODEX WTI원유선물(H)'}, {'Code': '132030', 'Name': 'KODEX 골드선물(H)'},
+    {'Code': '449190', 'Name': 'KODEX K-로봇액티브'}, {'Code': '394660', 'Name': 'KODEX K-메타버스액티브'},
+
+    # --- 주요 ETF (TIGER) ---
+    {'Code': '360750', 'Name': 'TIGER 미국필라델피아반도체나스닥'}, {'Code': '371460', 'Name': 'TIGER 차이나전기차SOLACTIVE'},
+    {'Code': '305540', 'Name': 'TIGER 2차전지테마'}, {'Code': '133690', 'Name': 'TIGER 미국나스닥100'},
+    {'Code': '102110', 'Name': 'TIGER 200'}, {'Code': '327630', 'Name': 'TIGER 글로벌리튬&2차전지SOLACTIVE(합성)'},
+    {'Code': '453950', 'Name': 'TIGER 미국테크TOP10 INDXX'}, {'Code': '465640', 'Name': 'TIGER 미국배당+7%프리미엄다우존스'},
+    {'Code': '143860', 'Name': 'TIGER 헬스케어'}, {'Code': '364980', 'Name': 'TIGER KRX BBIG K-뉴딜'},
+    
+    # --- 주요 ETF (ACE/SOL/KBSTAR) ---
+    {'Code': '381170', 'Name': 'ACE 미국30년국채액티브(H)'}, {'Code': '411420', 'Name': 'ACE 미국S&P500'},
+    {'Code': '438560', 'Name': 'SOL 미국배당다우존스'}, {'Code': '420940', 'Name': 'SOL 한국형글로벌반도체액티브'},
+    {'Code': '296710', 'Name': 'KBSTAR 헬스케어채권혼합'}, {'Code': '251350', 'Name': 'KBSTAR 200선물인버스2X'}
+]
+
+# ---------------------------------------------------------
+# 1. 대한민국 전 종목 리스트 가져오기 (하이브리드 방식)
 # ---------------------------------------------------------
 @st.cache_data
 def get_krx_list():
+    """서버에서 다운로드 시도 후 실패하면 내장 코드북 사용"""
+    # 1차 시도: FinanceDataReader (실시간 최신)
     try:
-        # 한국거래소(KRX)의 모든 종목(ETF 포함) 다운로드
         df = fdr.StockListing('KRX')
-        return df[['Code', 'Name']] # 코드와 이름만 남김
+        if not df.empty:
+            return df[['Code', 'Name']]
     except:
-        return pd.DataFrame(columns=['Code', 'Name'])
+        pass
+    
+    # 2차 시도: 내장 코드북 (비상용)
+    return pd.DataFrame(STATIC_KRX_DATA)
 
 # ---------------------------------------------------------
 # 2. 재무 데이터 수집 (네이버/야후)
@@ -38,8 +84,16 @@ def get_fundamental_data(code):
     # [한국 주식]
     if code.isdigit():
         data['Type'] = 'KR'
+        
         # ETF 식별 (이름에 ETF 관련 단어가 있거나 코드로 식별)
-        # 여기서는 간단히 코드로 넘어온 데이터를 분석
+        # 내장 리스트나 검색된 이름으로 ETF 여부를 판단하는게 정확하지만, 
+        # 여기서는 간단히 주요 ETF 코드로 1차 필터링
+        etf_codes = ['069500', '122630', '252670', '114800', '360750', '371460']
+        if code in etf_codes:
+            data['Type'] = 'ETF'
+            data['Opinion'] = "ℹ️ ETF는 개별 기업이 아니므로 영업이익 분석을 생략합니다."
+            return data
+
         try:
             url = f"https://finance.naver.com/item/main.naver?code={code}"
             headers = {'User-Agent': 'Mozilla/5.0'}
@@ -110,7 +164,7 @@ def get_stock_data(code):
         # 1차: FinanceDataReader (한국)
         try:
             if code.isdigit():
-                # 한국 주식은 코드로 바로 시도 or .KS/.KQ
+                # 한국 주식은 코드로 바로 시도
                 df = fdr.DataReader(code, start, end)
             else:
                 # 미국 주식
@@ -208,10 +262,12 @@ def analyze_advanced(df, fund_data):
 
     # (4) 가치
     report.append("\n#### 4️⃣ 기업 가치")
-    # ETF거나 미국 주식이거나 재무정보가 없으면 제외
-    if fund_data['Type'] == 'ETF' or fund_data['Type'] == 'US':
+    if fund_data['Type'] == 'ETF':
         fund_score += 10
-        report.append("- ℹ️ **ETF/해외주식**: 차트와 추세 위주로 분석합니다.")
+        report.append("- ℹ️ **ETF**: 차트와 추세 위주로 분석합니다.")
+    elif fund_data['Type'] == 'US':
+        fund_score += 10
+        report.append("- ℹ️ **해외주식**: 차트 위주로 분석합니다.")
     else:
         per = fund_data.get('PER', 0)
         pbr = fund_data.get('PBR', 0)
@@ -248,16 +304,15 @@ def sanitize_for_chart(df):
 # 5. 화면 구성 (검색 엔진 방식)
 # ---------------------------------------------------------
 st.title("👨‍🏫 AI 주식 과외 선생님")
-st.caption("한국 전 종목(ETF 포함) + 미국 주식 검색 지원")
+st.caption("한국 ETF/주식 + 미국 주식 통합 검색")
 
-# 1. 데이터 로드 (KRX 전체)
-with st.spinner("한국거래소 전 종목 리스트 불러오는 중... (최초 1회만 느림)"):
-    krx_list = get_krx_list()
+# 1. 데이터 로드 (내장 코드북 + 라이브 로드 시도)
+krx_list = get_krx_list()
 
 # 2. 검색 인터페이스
 col1, col2 = st.columns([3, 1])
 with col1:
-    search_keyword = st.text_input("🔍 종목명 입력 (예: 반도체, 효성, 삼성, ORCL)", placeholder="찾고 싶은 종목이나 키워드를 입력하세요")
+    search_keyword = st.text_input("🔍 종목명 입력 (예: 반도체, KODEX, 효성, ORCL)", placeholder="찾고 싶은 종목이나 ETF 이름을 입력하세요")
 
 selected_code = None
 selected_name = None
@@ -267,19 +322,19 @@ if search_keyword:
     search_keyword = search_keyword.upper().strip()
     
     # [A] 한국 종목 검색 (이름에 키워드가 포함된 모든 종목 찾기)
-    # 예: '반도체' -> 삼성전자, SK하이닉스, TIGER 반도체, KODEX 반도체 등등
+    # 내장 리스트에서 찾기 때문에 서버 상태와 무관하게 무조건 찾음
     results = krx_list[krx_list['Name'].str.contains(search_keyword, na=False)]
     
-    # [B] 미국 주식 직접 입력 처리 (결과가 없거나 영어인 경우)
-    # 사용자가 'ORCL' 같이 티커를 직접 입력했을 때를 대비
-    is_us_ticker = len(search_keyword) < 6 and search_keyword.isalpha()
+    # [B] 미국 주식 직접 입력 처리
+    is_us_ticker = len(search_keyword) < 6 and search_keyword.isalpha() and results.empty
     
     # 옵션 생성
     options = {}
     
     # 1. 한국 주식 검색 결과 추가
     if not results.empty:
-        for index, row in results.iterrows():
+        # 너무 많으면 상위 30개만 보여줌 (렉 방지)
+        for index, row in results.head(30).iterrows():
             display_text = f"{row['Name']} ({row['Code']})"
             options[display_text] = row['Code']
     
@@ -297,7 +352,7 @@ if search_keyword:
         if st.button("🚀 선택한 종목 분석하기", type="primary"):
             pass # 아래 로직 실행
     else:
-        st.warning("검색 결과가 없습니다. 정확한 종목명이나 티커를 입력해주세요.")
+        st.warning("검색 결과가 없습니다. (KODEX, TIGER, 삼성 등 정확한 키워드를 입력해보세요)")
 
 # ---------------------------------------------------------
 # 6. 분석 실행 (선택된 종목이 있을 때만)
@@ -359,16 +414,4 @@ if selected_code:
                                 row_heights=[0.5, 0.15, 0.15, 0.2],
                                 subplot_titles=("주가", "거래량", "MACD", "RSI"))
             
-            fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='캔들'), row=1, col=1)
-            fig.add_trace(go.Scatter(x=df.index, y=df['ma20'], line=dict(color='blue', width=1), name='20일선'), row=1, col=1)
-            fig.add_trace(go.Scatter(x=df.index, y=df['ma60'], line=dict(color='green', width=1), name='60일선'), row=1, col=1)
-            
-            fig.add_trace(go.Bar(x=df.index, y=df['Volume'], name='거래량'), row=2, col=1)
-            fig.add_trace(go.Bar(x=df.index, y=df['macd_diff'], marker_color='gray', name='MACD'), row=3, col=1)
-            fig.add_trace(go.Scatter(x=df.index, y=df['rsi'], line=dict(color='purple'), name='RSI'), row=4, col=1)
-            
-            fig.add_hline(y=30, line_dash="dash", line_color="green", row=4, col=1)
-            fig.add_hline(y=70, line_dash="dash", line_color="red", row=4, col=1)
-            
-            fig.update_layout(height=900, xaxis_rangeslider_visible=False, showlegend=False)
-            st.plotly_chart(fig, use_container_width=True)
+            fig.add_trace(go.Candlestick(x=df.index, open=
