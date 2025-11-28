@@ -4,3 +4,5 @@ pandas
 ta
 plotly
 yfinance
+beautifulsoup4
+requests
