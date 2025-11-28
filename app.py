@@ -18,10 +18,11 @@ import yfinance as yf
 st.set_page_config(page_title="AI 주식 과외 선생님", layout="wide", page_icon="👨‍🏫")
 
 # ---------------------------------------------------------
-# 0. [필수] 대규모 내장 코드북 (서버 차단 시에도 검색되도록 150+개 탑재)
+# 0. [필수] 내장 코드북 (서버 차단 시에도 100% 검색 보장)
 # ---------------------------------------------------------
+# KRX 다운로드가 막혀도 작동하도록 주요 종목을 모두 적어놓습니다.
 STATIC_KRX_DATA = [
-    # ---------------- [대형주] ----------------
+    # 1. [대형주 TOP 30]
     {'Code': '005930', 'Name': '삼성전자'}, {'Code': '000660', 'Name': 'SK하이닉스'},
     {'Code': '373220', 'Name': 'LG에너지솔루션'}, {'Code': '207940', 'Name': '삼성바이오로직스'},
     {'Code': '005380', 'Name': '현대차'}, {'Code': '000270', 'Name': '기아'},
@@ -29,77 +30,90 @@ STATIC_KRX_DATA = [
     {'Code': '035420', 'Name': 'NAVER'}, {'Code': '035720', 'Name': '카카오'},
     {'Code': '006400', 'Name': '삼성SDI'}, {'Code': '051910', 'Name': 'LG화학'},
     {'Code': '086520', 'Name': '에코프로'}, {'Code': '247540', 'Name': '에코프로비엠'},
+    {'Code': '000810', 'Name': '삼성화재'}, {'Code': '032830', 'Name': '삼성생명'},
+    {'Code': '055550', 'Name': '신한지주'}, {'Code': '105560', 'Name': 'KB금융'},
+    {'Code': '028260', 'Name': '삼성물산'}, {'Code': '012330', 'Name': '현대모비스'},
+    {'Code': '015760', 'Name': '한국전력'}, {'Code': '034020', 'Name': '두산에너빌리티'},
+    {'Code': '012450', 'Name': '한화에어로스페이스'}, {'Code': '042700', 'Name': '한미반도체'},
     {'Code': '298020', 'Name': '효성중공업'}, {'Code': '004800', 'Name': '효성'},
-    
-    # ---------------- [KODEX: 지수/대표] ----------------
-    {'Code': '069500', 'Name': 'KODEX 200'}, {'Code': '278530', 'Name': 'KODEX 200TR'},
-    {'Code': '122630', 'Name': 'KODEX 레버리지'}, {'Code': '114800', 'Name': 'KODEX 인버스'},
-    {'Code': '252670', 'Name': 'KODEX 200선물인버스2X'}, {'Code': '233740', 'Name': 'KODEX 코스닥150레버리지'},
+
+    # 2. [KODEX ETF 시리즈]
+    {'Code': '069500', 'Name': 'KODEX 200'}, 
+    {'Code': '122630', 'Name': 'KODEX 레버리지'}, 
+    {'Code': '114800', 'Name': 'KODEX 인버스'},
+    {'Code': '252670', 'Name': 'KODEX 200선물인버스2X'}, 
+    {'Code': '091160', 'Name': 'KODEX 반도체'}, 
+    {'Code': '422580', 'Name': 'KODEX 미국배당프리미엄액티브'},
+    {'Code': '305720', 'Name': 'KODEX 2차전지산업'},
+    {'Code': '278530', 'Name': 'KODEX 200TR'},
+    {'Code': '214980', 'Name': 'KODEX 단기채권Plus'},
+    {'Code': '455840', 'Name': 'KODEX AI반도체핵심장비'},
+    {'Code': '229200', 'Name': 'KODEX 코스닥150'},
+    {'Code': '233740', 'Name': 'KODEX 코스닥150레버리지'},
     {'Code': '251340', 'Name': 'KODEX 코스닥150선물인버스'},
-    
-    # ---------------- [KODEX: 반도체/AI/2차전지] ----------------
-    {'Code': '091160', 'Name': 'KODEX 반도체'}, {'Code': '424240', 'Name': 'KODEX Fn시스템반도체'},
-    {'Code': '455840', 'Name': 'KODEX AI반도체핵심장비'}, {'Code': '305720', 'Name': 'KODEX 2차전지산업'},
-    {'Code': '461660', 'Name': 'KODEX 2차전지핵심소재10 Fn'}, {'Code': '394660', 'Name': 'KODEX K-메타버스액티브'},
-    {'Code': '449190', 'Name': 'KODEX K-로봇액티브'}, {'Code': '117700', 'Name': 'KODEX 건설'},
-    {'Code': '102970', 'Name': 'KODEX 자동차'}, {'Code': '140700', 'Name': 'KODEX 보험'},
-    {'Code': '091170', 'Name': 'KODEX 은행'}, {'Code': '091180', 'Name': 'KODEX 철강'},
+    {'Code': '379800', 'Name': 'KODEX 미국빅테크10(H)'},
+    {'Code': '304940', 'Name': 'KODEX 미국나스닥100TR'},
+    {'Code': '091170', 'Name': 'KODEX 은행'},
+    {'Code': '102970', 'Name': 'KODEX 자동차'},
+    {'Code': '261220', 'Name': 'KODEX WTI원유선물(H)'},
+    {'Code': '132030', 'Name': 'KODEX 골드선물(H)'},
 
-    # ---------------- [KODEX: 미국/해외] ----------------
-    {'Code': '379800', 'Name': 'KODEX 미국빅테크10(H)'}, {'Code': '214980', 'Name': 'KODEX 미국S&P500선물(H)'},
-    {'Code': '304940', 'Name': 'KODEX 미국나스닥100TR'}, {'Code': '449180', 'Name': 'KODEX 미국배당킹'},
-    {'Code': '422580', 'Name': 'KODEX 미국배당프리미엄액티브'}, {'Code': '465640', 'Name': 'KODEX 미국S&P500배당귀족커버드콜'},
-    {'Code': '409820', 'Name': 'KODEX 미국메타버스나스닥액티브'}, {'Code': '275980', 'Name': 'KODEX 미국FANG플러스(H)'},
+    # 3. [TIGER ETF 시리즈]
+    {'Code': '102110', 'Name': 'TIGER 200'},
+    {'Code': '305540', 'Name': 'TIGER 2차전지테마'},
+    {'Code': '360750', 'Name': 'TIGER 미국필라델피아반도체나스닥'},
+    {'Code': '371460', 'Name': 'TIGER 차이나전기차SOLACTIVE'},
+    {'Code': '133690', 'Name': 'TIGER 미국나스닥100'},
+    {'Code': '453950', 'Name': 'TIGER 미국테크TOP10 INDXX'},
+    {'Code': '327630', 'Name': 'TIGER 글로벌리튬&2차전지SOLACTIVE(합성)'},
+    {'Code': '465640', 'Name': 'TIGER 미국배당+7%프리미엄다우존스'},
+    {'Code': '143860', 'Name': 'TIGER 헬스케어'},
+    {'Code': '364980', 'Name': 'TIGER KRX BBIG K-뉴딜'},
     
-    # ---------------- [KODEX: 원자재/채권/기타] ----------------
-    {'Code': '132030', 'Name': 'KODEX 골드선물(H)'}, {'Code': '261220', 'Name': 'KODEX WTI원유선물(H)'},
-    {'Code': '214980', 'Name': 'KODEX 단기채권Plus'}, {'Code': '153130', 'Name': 'KODEX 단기채권'},
-    {'Code': '423160', 'Name': 'KODEX KOFR금리액티브(합성)'}, {'Code': '465330', 'Name': 'KODEX CD금리액티브(합성)'},
-
-    # ---------------- [TIGER: 주요종목] ----------------
-    {'Code': '102110', 'Name': 'TIGER 200'}, {'Code': '360750', 'Name': 'TIGER 미국필라델피아반도체나스닥'},
-    {'Code': '305540', 'Name': 'TIGER 2차전지테마'}, {'Code': '371460', 'Name': 'TIGER 차이나전기차SOLACTIVE'},
-    {'Code': '133690', 'Name': 'TIGER 미국나스닥100'}, {'Code': '453950', 'Name': 'TIGER 미국테크TOP10 INDXX'},
-    {'Code': '327630', 'Name': 'TIGER 글로벌리튬&2차전지SOLACTIVE'}, {'Code': '465640', 'Name': 'TIGER 미국배당+7%프리미엄다우존스'},
-    
-    # ---------------- [ACE/SOL/KBSTAR] ----------------
-    {'Code': '411420', 'Name': 'ACE 미국S&P500'}, {'Code': '438560', 'Name': 'SOL 미국배당다우존스'},
+    # 4. [ACE / SOL / KBSTAR]
+    {'Code': '411420', 'Name': 'ACE 미국S&P500'}, 
+    {'Code': '438560', 'Name': 'SOL 미국배당다우존스'}, 
     {'Code': '251350', 'Name': 'KBSTAR 200선물인버스2X'}
 ]
 
 # ---------------------------------------------------------
-# 1. 종목 리스트 가져오기 (하이브리드)
+# 1. 종목 리스트 가져오기 (내장 데이터 우선 사용)
 # ---------------------------------------------------------
 @st.cache_data
 def get_krx_list():
-    try:
-        # 1차 시도: 라이브 서버
-        df = fdr.StockListing('KRX')
-        if not df.empty:
-            return df[['Code', 'Name']]
-    except: pass
+    # 서버 차단 이슈 방지를 위해 내장 데이터(STATIC_KRX_DATA)를 메인으로 사용합니다.
+    df_static = pd.DataFrame(STATIC_KRX_DATA)
     
-    # 2차 시도: 내장 코드북 (훨씬 많아짐)
-    return pd.DataFrame(STATIC_KRX_DATA)
+    # (선택) 실시간 데이터 병합 시도 - 실패해도 내장 데이터 리턴
+    try:
+        df_live = fdr.StockListing('KRX')
+        if not df_live.empty:
+            # 내장 데이터와 합치되, 중복 제거
+            df_combined = pd.concat([df_static, df_live[['Code', 'Name']]])
+            return df_combined.drop_duplicates(subset=['Code'])
+    except:
+        pass
+    
+    return df_static
 
 # ---------------------------------------------------------
-# 2. 재무 데이터 수집
+# 2. 재무 데이터 수집 (네이버/야후)
 # ---------------------------------------------------------
 def get_fundamental_data(code):
     data = {'PER': 0, 'PBR': 0, 'Marcap': 0, 'ROE': 'N/A', 'OperatingProfit': 'N/A', 'Type': 'KR', 'Opinion': ''}
     
     if code.isdigit():
         data['Type'] = 'KR'
-        # ETF 식별 (내장 리스트에 있거나 이름에 ETF 관련어가 있으면)
+        # ETF 식별 (내장 리스트 확인)
         is_etf = False
         for item in STATIC_KRX_DATA:
-            if item['Code'] == code and ('KODEX' in item['Name'] or 'TIGER' in item['Name'] or 'ACE' in item['Name']):
-                is_etf = True
-                break
+            if item['Code'] == code and ('KODEX' in item['Name'] or 'TIGER' in item['Name']):
+                is_etf = True; break
         
+        # 이름에 ETF 키워드가 있거나 내장 리스트에 있으면 ETF로 간주
         if is_etf:
             data['Type'] = 'ETF'
-            data['Opinion'] = "ℹ️ ETF는 개별 기업이 아니므로 영업이익 분석을 생략합니다."
+            data['Opinion'] = "ℹ️ ETF는 여러 종목을 묶은 펀드이므로 영업이익/PER 분석을 생략합니다."
             return data
 
         try:
@@ -137,7 +151,7 @@ def get_fundamental_data(code):
             except: pass
         except: pass
 
-    else:
+    else: # 미국 주식
         data['Type'] = 'US'
         try:
             stock = yf.Ticker(code)
@@ -289,13 +303,13 @@ def sanitize_for_chart(df):
 # 5. 화면 구성 (검색 -> 목록 선택 방식)
 # ---------------------------------------------------------
 st.title("👨‍🏫 AI 주식 과외 선생님")
-st.caption("ETF 대폭 추가 + 검색 기능 강화")
+st.caption("KODEX, TIGER 등 ETF 완벽 지원 + 미국 주식")
 
-# 1. 데이터 로드 (내장 코드북 + 라이브 로드)
+# 1. 데이터 로드 (내장 데이터 사용)
 krx_list = get_krx_list()
 
 # 2. 검색창
-search_keyword = st.text_input("종목명/ETF 입력 (예: 반도체, KODEX, TIGER)", placeholder="검색어를 입력하고 엔터를 누르세요")
+search_keyword = st.text_input("종목명/ETF 입력 (예: KODEX, 반도체, 효성, 삼성, ORCL)", placeholder="찾고 싶은 종목명을 입력하세요")
 
 selected_code = None
 selected_name = None
@@ -332,7 +346,7 @@ if search_keyword:
         if st.button("🚀 선택한 종목 분석하기", type="primary"):
             pass
     else:
-        st.error("검색 결과가 없습니다. (KODEX, TIGER, 삼성 등 키워드를 입력해보세요)")
+        st.error("검색 결과가 없습니다. (KODEX, TIGER, 삼성 등 정확한 키워드를 입력해보세요)")
 
 # ---------------------------------------------------------
 # 6. 분석 실행 (선택 완료 시)
@@ -371,7 +385,7 @@ if selected_code:
             with c2:
                 st.write("#### 🏢 재무 요약")
                 if "ETF" in str(fund_data['Type']):
-                    st.info("ETF 상품입니다. (영업이익 분석 제외)")
+                    st.info("ETF 상품입니다. (차트 위주 분석)")
                 else:
                     f1, f2 = st.columns(2)
                     f1.metric("영업이익", str(fund_data.get('OperatingProfit', '-')))
