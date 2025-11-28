@@ -254,7 +254,6 @@ user_input = st.text_input("🔍 종목 검색 (예: 삼성전자, 에코프로,
 if st.button("분석 시작", type="primary") and user_input:
     # 1. 종목 찾기 (만능 검색)
     listing = get_stock_listing()
-    # 검색어를 대문자로 바꾸고 공백을 제거하여 검색 준비
     search = user_input.upper().replace(" ", "")
     
     found_code = None
@@ -263,34 +262,67 @@ if st.button("분석 시작", type="primary") and user_input:
     
     # 1-1. KRX 리스트에서 찾기
     if not listing.empty:
-        # 이름 매칭: 이름이 검색어를 포함하는지 유연하게 확인 (가장 중요한 수정)
+        # 이름 매칭: 이름이 검색어를 포함하는지 유연하게 확인 (현대차, 삼성 등 대응)
         res = listing[listing['Name'].str.contains(search, case=False, na=False)]
         
-        # '현대차'라고 검색했을 때 '현대자동차'가 포함되도록 변경됨
-        if res.empty: # 2차: 코드로 시도 (코드로 검색했을 경우)
+        if res.empty: # 2차: 코드로 시도
             res = listing[listing['Code'] == search]
             
         if not res.empty:
-            # 매칭된 여러 개 중 첫 번째 것을 사용 (가장 정확한 것)
             found_code = res.iloc[0]['Code']
             found_name = res.iloc[0]['Name']
             fund_data = res.iloc[0]
             
+            # 🚨 비상 로직: PER/PBR이 0일 경우, Naver Finance에서 데이터 보강 🚨
+            # KRW 종목이면서, PER 또는 PBR이 0 또는 유효하지 않은 값일 때 시도
+            is_krw = found_code.isdigit()
+            is_fund_missing = fund_data['PER'] == 0 or pd.isna(fund_data['PER'])
+            
+            if is_krw and is_fund_missing:
+                try:
+                    naver_url = f"https://finance.naver.com/item/main.nhn?code={found_code}"
+                    
+                    # Naver 금융에서 PER/PBR을 포함한 '주요 재무지표' 테이블 전체를 가져옴
+                    tables = pd.read_html(naver_url, match='PER|PBR|배당수익률')
+                    
+                    if tables:
+                        # 보통 첫 번째 매칭 테이블이 원하는 데이터 (네이버의 주요 재무 정보)
+                        fund_table = tables[0] 
+                        
+                        # PER 값 추출 (PER이 테이블 1열 1행에 있다고 가정)
+                        per_val = fund_table[1][0] if fund_table[0][0] == 'PER' else None
+                        
+                        # PBR 값 추출 (PBR이 테이블 1열 2행에 있다고 가정)
+                        pbr_val = fund_table[1][1] if fund_table[0][1] == 'PBR' else None
+                        
+                        # 데이터 유효성 확인 및 fund_data에 주입
+                        if pd.notna(per_val) and per_val != 0 and per_val != '-':
+                            fund_data['PER'] = float(per_val)
+                        if pd.notna(pbr_val) and pbr_val != 0 and pbr_val != '-':
+                            fund_data['PBR'] = float(pbr_val)
+                            
+                except Exception as e:
+                    # 크롤링 실패 시 무시하고 다음 단계 진행
+                    print(f"Naver fundamental scrape failed: {e}")
+            # 🚨 비상 로직 끝 🚨
+
     # 1-2. 못 찾았으면 미국 티커로 간주
     if not found_code:
         found_code = search
     
     # 2. 분석 시작
     with st.spinner(f"'{found_name}' 심층 분석 중입니다..."):
-        # 분석 함수 호출 시, fund_data를 함께 넘겨줍니다.
+        # 함수 호출 및 결과 출력 (기존과 동일)
         score, report, df, trend_s, price_s, timing_s, fund_s = 0, [], pd.DataFrame(), 0, 0, 0, 0
         raw_df, err = get_stock_data(found_code)
         
         if err:
             st.error(f"데이터를 가져올 수 없습니다: {err}")
         else:
-            # 새로운 분석 함수 호출 (fund_data를 함께 넘김)
+            # 수정된 analyze_advanced 함수 호출
             score, report, df, trend_s, price_s, timing_s, fund_s = analyze_advanced(raw_df, fund_data)
+            
+            # ... (이하 결과 화면 출력 코드는 동일) ...
             
             # --- [결과 화면] ---
             # ... (이하 결과 화면 출력 코드는 기존과 동일하게 유지됩니다.)
@@ -392,4 +424,5 @@ if st.button("분석 시작", type="primary") and user_input:
                 """)
             else:
                 st.caption("※ ETF나 해외 주식은 상세 재무 데이터(PER/PBR)가 제공되지 않습니다.")
+
 
