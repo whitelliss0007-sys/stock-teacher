@@ -301,116 +301,188 @@ def sanitize_for_chart(df):
     for col in ['ma20', 'ma60', 'bb_l', 'macd_diff', 'rsi', 'Volume']:
         if col not in df.columns: df[col] = 0.0
     return df.fillna(0)
-
 # ---------------------------------------------------------
-# 7. 화면 구성
+# 5. [신규] 우량주 발굴(추천) 시스템
+# ---------------------------------------------------------
+def scan_undervalued_stocks():
+    """내장된 주요 종목 리스트에서 저평가 우량주를 발굴합니다."""
+    gems = []
+    
+    # 내장 데이터 중 ETF가 아닌 일반 기업만 필터링 (ETF는 PER/PBR 분석 제외)
+    target_stocks = [s for s in STATIC_KRX_DATA if 'KODEX' not in s['Name'] and 'TIGER' not in s['Name'] and 'ACE' not in s['Name']]
+    
+    # 진행 상황 표시줄
+    progress_text = "보물을 찾는 중입니다... 잠시만 기다려주세요."
+    my_bar = st.progress(0, text=progress_text)
+    
+    for i, stock in enumerate(target_stocks):
+        # 진행률 업데이트
+        my_bar.progress((i + 1) / len(target_stocks), text=f"🔍 분석 중: {stock['Name']}")
+        
+        try:
+            # 1. 재무 데이터 가져오기
+            f_data = get_fundamental_data(stock['Code'])
+            
+            per = f_data.get('PER', 0)
+            pbr = f_data.get('PBR', 0)
+            psr = f_data.get('PSR', 0)
+            # ROE는 문자열(% 포함)이라 숫자로 변환
+            roe_str = str(f_data.get('ROE', '0')).replace('%', '').strip()
+            roe = float(roe_str) if roe_str.replace('.', '', 1).isdigit() else 0
+            
+            # 2. 필터링 조건 (치킨집 비유 적용)
+            reasons = []
+            
+            # 조건 A: 저평가 (PER 15 이하)
+            if 0 < per <= 15:
+                reasons.append(f"💰 **쌉니다 (PER {per})**: 치킨집 본전 뽑는데 {per}년밖에 안 걸리는 가격입니다.")
+            
+            # 조건 B: 자산가치 (PBR 1.2 이하)
+            if 0 < pbr <= 1.2:
+                reasons.append(f"🏗️ **안전합니다 (PBR {pbr})**: 가게 문 닫고 짐만 팔아도 본전은 건지는 수준입니다.")
+            
+            # 조건 C: 장사 실력 (ROE 10% 이상)
+            if roe >= 10:
+                reasons.append(f"👨‍🍳 **장사의 신 (ROE {roe}%)**: 사장님이 돈 굴리는 솜씨(수익성)가 아주 좋습니다.")
+                
+            # 조건 D: 매출 성장 (PSR 1.0 이하 - 저평가 매출)
+            if 0 < psr < 1.0:
+                reasons.append(f"🔥 **매출 대비 저평가 (PSR {psr})**: 시가총액이 1년 매출액보다도 작습니다.")
+
+            # 조건 E: 영업이익 흑자 (필수 조건)
+            op = f_data.get('OperatingProfit', 'N/A')
+            if "억원" not in str(op) or str(op).startswith("-"):
+                continue # 적자 기업은 추천 목록에서 제외
+                
+            # [결과] 좋은 이유가 2개 이상이면 '보물'로 선정
+            if len(reasons) >= 2:
+                gems.append({
+                    'Name': stock['Name'],
+                    'Code': stock['Code'],
+                    'Reasons': reasons,
+                    'Data': f_data
+                })
+                
+        except: continue
+        
+    my_bar.empty() # 진행바 제거
+    return gems
+# ---------------------------------------------------------
+# ---------------------------------------------------------
+# 6. 화면 구성 (탭 구분: 검색 vs 추천)
 # ---------------------------------------------------------
 st.title("👨‍🏫 AI 주식 과외 선생님")
-st.caption("PLUS, ACE, SOL 포함 모든 ETF 검색 가능")
 
-# 1. 데이터 로드 (ETF 800개 + 주식)
-with st.spinner("종목 리스트 불러오는 중..."):
-    combined_list = get_combined_list()
+# 탭 만들기
+tab_search, tab_recommend = st.tabs(["🔍 종목 분석 (검색)", "💎 우량주 발굴 (AI 추천)"])
 
-# 2. 검색창
-search_keyword = st.text_input("종목명/ETF 입력 (예: PLUS, AI, 2차전지, 삼성)", placeholder="검색어를 입력하고 엔터를 누르세요")
-
-selected_code = None
-selected_name = None
-
-if search_keyword:
-    search_keyword = search_keyword.upper().strip()
+# === [탭 1] 기존 종목 검색 기능 ===
+with tab_search:
+    st.caption("한국/미국 주식 + ETF + PSR/매출 분석")
     
-    # [A] 한국 종목/ETF 검색
-    results = combined_list[combined_list['Name'].str.contains(search_keyword, na=False)]
+    krx_list = get_krx_list()
+    search_keyword = st.text_input("종목명/ETF 입력", placeholder="삼성전자, KODEX, 테슬라 등...")
     
-    # [B] 미국 주식
-    is_us_ticker = len(search_keyword) < 6 and search_keyword.isalpha()
-    
-    options = {}
-    if not results.empty:
-        # 상위 100개 표시
-        for index, row in results.head(100).iterrows():
-            options[f"{row['Name']} ({row['Code']})"] = row['Code']
-    
-    if is_us_ticker:
-        options[f"🇺🇸 미국주식: {search_keyword}"] = search_keyword
+    selected_code = None
+    selected_name = None
 
-    if options:
-        selected_option = st.selectbox("⬇️ 검색 결과 중 하나를 선택하세요:", list(options.keys()))
-        selected_code = options[selected_option]
-        selected_name = selected_option.split('(')[0].strip()
+    if search_keyword:
+        search_keyword = search_keyword.upper().strip()
+        results = krx_list[krx_list['Name'].str.contains(search_keyword, na=False)]
+        is_us_ticker = len(search_keyword) < 6 and search_keyword.isalpha()
         
-        if st.button("🚀 선택한 종목 분석하기", type="primary"):
-            pass
-    else:
-        st.error("검색 결과가 없습니다.")
+        options = {}
+        if not results.empty:
+            for index, row in results.head(50).iterrows():
+                options[f"{row['Name']} ({row['Code']})"] = row['Code']
+        if is_us_ticker:
+            options[f"🇺🇸 미국주식: {search_keyword}"] = search_keyword
 
-# 분석 실행
-if selected_code:
-    st.divider()
-    st.info(f"선택된 종목: **{selected_name}** (코드: {selected_code})")
-    
-    fund_data = {}
-    with st.spinner("재무 데이터 수집 중..."):
-        fund_data = get_fundamental_data(selected_code)
-
-    with st.spinner("차트 데이터 분석 중..."):
-        data_dict, err = get_stock_data(selected_code)
-        
-        if err:
-            st.error(f"데이터 로딩 실패: {err}")
+        if options:
+            selected_option = st.selectbox("⬇️ 검색 결과 선택:", list(options.keys()))
+            selected_code = options[selected_option]
+            selected_name = selected_option.split('(')[0].strip()
+            if st.button("🚀 분석하기", type="primary"): pass
         else:
-            raw_df = data_dict['D']
-            score, report, df, ts, ps, tis, fs = analyze_advanced(data_dict, fund_data)
-            curr_price = df.iloc[-1]['Close']
-            
-            st.header(f"📊 {selected_name}")
-            c1, c2 = st.columns([1, 1.3])
-            
-            with c1:
-                currency = "원" if fund_data['Type'] != 'US' else "$"
-                fmt_price = f"{int(curr_price):,}" if currency=="원" else f"{curr_price:.2f}"
-                st.metric("현재 주가", f"{fmt_price} {currency}")
-                st.write(f"### 🤖 매수 확률: {score}%")
-                if score >= 80: st.success("강력 매수")
-                elif score >= 60: st.info("매수 고려")
-                elif score <= 40: st.error("관망/매도")
-                else: st.warning("중립")
+            st.error("검색 결과가 없습니다.")
 
-            with c2:
-                st.write("#### 🏢 재무 요약")
-                if "ETF" in str(fund_data['Type']) or "ETF" in str(fund_data.get('Opinion')):
-                    st.info("ETF 상품입니다. (차트 위주 분석)")
-                else:
+    if selected_code:
+        st.divider()
+        fund_data = {}
+        with st.spinner("데이터 분석 중..."):
+            fund_data = get_fundamental_data(selected_code)
+            data_dict, err = get_stock_data(selected_code)
+            
+            if err:
+                st.error("데이터 부족")
+            else:
+                raw_df = data_dict['D']
+                score, report, df, ts, ps, tis, fs = analyze_advanced(data_dict, fund_data)
+                curr_price = df.iloc[-1]['Close']
+                
+                st.header(f"📊 {selected_name}")
+                c1, c2 = st.columns([1, 1.3])
+                with c1:
+                    currency = "원" if fund_data['Type'] != 'US' else "$"
+                    fmt_price = f"{int(curr_price):,}" if currency=="원" else f"{curr_price:.2f}"
+                    st.metric("현재 주가", f"{fmt_price} {currency}")
+                    st.write(f"### 🤖 매수 확률: {score}%")
+                    if score >= 80: st.success("강력 매수")
+                    elif score >= 60: st.info("매수 고려")
+                    elif score <= 40: st.error("관망/매도")
+                    else: st.warning("중립")
+                with c2:
                     f1, f2 = st.columns(2)
                     f1.metric("영업이익", str(fund_data.get('OperatingProfit', '-')))
                     f1.metric("PER", fund_data.get('PER', 0))
                     f2.metric("PSR", fund_data.get('PSR', 0))
                     f2.metric("PBR", fund_data.get('PBR', 0))
                     if fund_data.get('Revenue_Trend'):
-                        st.caption(f"매출 추이: {' -> '.join(fund_data['Revenue_Trend'])}")
-            
-            st.write("---")
-            with st.expander("📝 상세 분석 내용 보기", expanded=True):
-                for r in report: st.markdown(r)
-            
-            st.write("---")
-            st.subheader("📈 시세 차트 (일봉/주봉/월봉)")
-            
-            tab1, tab2, tab3 = st.tabs(["일봉", "주봉", "월봉"])
-            
-            def draw_chart(df, title):
-                df = sanitize_for_chart(df)
-                fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.7, 0.3], subplot_titles=(f"{title} 주가", "거래량"))
-                fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='캔들'), row=1, col=1)
-                if title == '일봉':
-                    fig.add_trace(go.Scatter(x=df.index, y=df['ma20'], line=dict(color='blue', width=1), name='20일선'), row=1, col=1)
-                    fig.add_trace(go.Scatter(x=df.index, y=df['ma60'], line=dict(color='green', width=1), name='60일선'), row=1, col=1)
-                fig.add_trace(go.Bar(x=df.index, y=df['Volume'], name='거래량'), row=2, col=1)
-                fig.update_layout(height=600, xaxis_rangeslider_visible=False, showlegend=False)
-                return fig
+                        st.caption(f"매출: {' -> '.join(fund_data['Revenue_Trend'])}")
+                
+                with st.expander("📝 상세 분석 내용", expanded=True):
+                    for r in report: st.markdown(r)
+                
+                # 차트 탭 (일/주/월)
+                sub_tab1, sub_tab2, sub_tab3 = st.tabs(["일봉", "주봉", "월봉"])
+                
+                def draw_chart(df, title):
+                    df = sanitize_for_chart(df)
+                    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.7, 0.3], subplot_titles=(f"{title} 주가", "거래량"))
+                    fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='캔들'), row=1, col=1)
+                    if title == '일봉':
+                        fig.add_trace(go.Scatter(x=df.index, y=df['ma20'], line=dict(color='blue', width=1), name='20일선'), row=1, col=1)
+                        fig.add_trace(go.Scatter(x=df.index, y=df['ma60'], line=dict(color='green', width=1), name='60일선'), row=1, col=1)
+                    fig.add_trace(go.Bar(x=df.index, y=df['Volume'], name='거래량'), row=2, col=1)
+                    fig.update_layout(height=600, xaxis_rangeslider_visible=False, showlegend=False)
+                    return fig
 
-            with tab1: st.plotly_chart(draw_chart(data_dict['D'], "일봉"), use_container_width=True)
-            with tab2: st.plotly_chart(draw_chart(data_dict['W'], "주봉"), use_container_width=True)
-            with tab3: st.plotly_chart(draw_chart(data_dict['M'], "월봉"), use_container_width=True)
+                with sub_tab1: st.plotly_chart(draw_chart(data_dict['D'], "일봉"), use_container_width=True)
+                with sub_tab2: st.plotly_chart(draw_chart(data_dict['W'], "주봉"), use_container_width=True)
+                with sub_tab3: st.plotly_chart(draw_chart(data_dict['M'], "월봉"), use_container_width=True)
+
+# === [탭 2] 우량주 발굴 기능 ===
+with tab_recommend:
+    st.header("💎 숨겨진 보석(우량주) 찾기")
+    st.write("AI가 주요 종목을 샅샅이 뒤져서 **싸고(저평가), 돈 잘 벌고(흑자), 튼튼한(자산)** 기업을 찾아냅니다.")
+    
+    if st.button("🚀 보물 찾기 시작! (약 10~20초 소요)", type="primary"):
+        gems = scan_undervalued_stocks()
+        
+        if gems:
+            st.success(f"총 {len(gems)}개의 보물을 발견했습니다!")
+            for gem in gems:
+                with st.container():
+                    st.subheader(f"🎁 {gem['Name']} ({gem['Code']})")
+                    
+                    c1, c2 = st.columns([2, 1])
+                    with c1:
+                        for reason in gem['Reasons']:
+                            st.info(reason) # 추천 이유 출력
+                    with c2:
+                        st.metric("PER", gem['Data'].get('PER'))
+                        st.metric("PBR", gem['Data'].get('PBR'))
+                        st.metric("ROE", gem['Data'].get('ROE'))
+                    st.divider()
+        else:
+            st.warning("아쉽게도 완벽한 조건에 맞는 보물을 찾지 못했습니다. (기준이 너무 높을 수 있어요!)")
