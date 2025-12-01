@@ -19,26 +19,7 @@ import json
 st.set_page_config(page_title="AI 주식 과외 선생님", layout="wide", page_icon="👨‍🏫")
 
 # ---------------------------------------------------------
-# 1. [핵심] 네이버에서 모든 ETF 명단 가져오기 (800개+)
-# ---------------------------------------------------------
-@st.cache_data
-def get_all_korean_etfs():
-    """네이버 파이낸스 API를 통해 한국의 모든 ETF 리스트를 가져옵니다."""
-    try:
-        url = "https://finance.naver.com/api/sise/etfItemList.nhn"
-        resp = requests.get(url)
-        data = resp.json()
-        
-        # 데이터프레임으로 변환
-        etf_list = pd.DataFrame(data['result']['etfItemList'])
-        etf_list = etf_list[['itemcode', 'itemname']]
-        etf_list.columns = ['Code', 'Name']
-        return etf_list
-    except:
-        return pd.DataFrame()
-
-# ---------------------------------------------------------
-# 2. 내장 코드북 (주요 주식 대형주 비상용)
+# 0. [필수] 내장 코드북 (주요 종목 빠른 검색용)
 # ---------------------------------------------------------
 STATIC_STOCKS = [
     {'Code': '005930', 'Name': '삼성전자'}, {'Code': '000660', 'Name': 'SK하이닉스'},
@@ -48,62 +29,74 @@ STATIC_STOCKS = [
     {'Code': '035420', 'Name': 'NAVER'}, {'Code': '035720', 'Name': '카카오'},
     {'Code': '006400', 'Name': '삼성SDI'}, {'Code': '051910', 'Name': 'LG화학'},
     {'Code': '086520', 'Name': '에코프로'}, {'Code': '247540', 'Name': '에코프로비엠'},
-    {'Code': '000810', 'Name': '삼성화재'}, {'Code': '032830', 'Name': '삼성생명'},
-    {'Code': '055550', 'Name': '신한지주'}, {'Code': '105560', 'Name': 'KB금융'},
-    {'Code': '028260', 'Name': '삼성물산'}, {'Code': '012330', 'Name': '현대모비스'},
-    {'Code': '015760', 'Name': '한국전력'}, {'Code': '034020', 'Name': '두산에너빌리티'},
-    {'Code': '012450', 'Name': '한화에어로스페이스'}, {'Code': '042700', 'Name': '한미반도체'},
-    {'Code': '298020', 'Name': '효성중공업'}, {'Code': '004800', 'Name': '효성'},
-    {'Code': '298050', 'Name': '효성첨단소재'}, {'Code': '298000', 'Name': '효성티앤씨'},
-    {'Code': '010120', 'Name': 'LS일렉트릭'}, {'Code': '003550', 'Name': 'LG'},
-    {'Code': '034730', 'Name': 'SK'}, {'Code': '017670', 'Name': 'SK텔레콤'}
+    {'Code': '069500', 'Name': 'KODEX 200'}, {'Code': '122630', 'Name': 'KODEX 레버리지'},
+    {'Code': '252670', 'Name': 'KODEX 200선물인버스2X'}, {'Code': '114800', 'Name': 'KODEX 인버스'},
+    {'Code': '360750', 'Name': 'TIGER 미국필라델피아반도체나스닥'}, {'Code': '371460', 'Name': 'TIGER 차이나전기차SOLACTIVE'},
 ]
 
 # ---------------------------------------------------------
-# 3. 통합 검색 리스트 생성 (주식 + 모든 ETF)
+# 1. [핵심] 네이버 실시간 검색 (검색창 연동)
+# ---------------------------------------------------------
+def search_naver_stock_code(keyword):
+    """
+    사용자가 입력한 키워드를 네이버 증권 검색창에 대신 물어보고
+    정확한 종목 코드와 이름을 받아옵니다. (펩트론, 잡주, 신규상장주 모두 해결)
+    """
+    try:
+        # 네이버 자동완성 API 호출
+        url = f"https://ac.finance.naver.com/ac?q={keyword}&q_enc=euc-kr&st=111&r_format=json&r_enc=euc-kr"
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        response = requests.get(url, headers=headers)
+        data = response.json()
+        
+        # 결과 파싱
+        results = []
+        if 'items' in data and len(data['items']) > 0:
+            for item in data['items'][0]:
+                # item[0]: 코드, item[1]: 종목명
+                results.append({'Code': item[0], 'Name': item[1]})
+        return results
+    except:
+        return []
+
+# ---------------------------------------------------------
+# 2. [핵심] 모든 ETF 명단 가져오기
 # ---------------------------------------------------------
 @st.cache_data
-def get_combined_list():
-    # 1. 내장 주식 데이터
-    stocks = pd.DataFrame(STATIC_STOCKS)
-    
-    # 2. 실시간 주식 데이터 (서버가 허용하면 추가)
+def get_all_korean_etfs():
     try:
-        live_stocks = fdr.StockListing('KRX')
-        if not live_stocks.empty:
-            stocks = live_stocks[['Code', 'Name']]
-    except: pass
-
-    # 3. [핵심] 모든 ETF 데이터 (네이버 API)
-    etfs = get_all_korean_etfs()
-    
-    # 4. 합치기
-    combined = pd.concat([stocks, etfs], ignore_index=True)
-    return combined.drop_duplicates(subset=['Code'])
+        url = "https://finance.naver.com/api/sise/etfItemList.nhn"
+        resp = requests.get(url)
+        data = resp.json()
+        etf_list = pd.DataFrame(data['result']['etfItemList'])
+        return etf_list[['itemcode', 'itemname']].rename(columns={'itemcode': 'Code', 'itemname': 'Name'})
+    except:
+        return pd.DataFrame()
 
 # ---------------------------------------------------------
-# 4. 재무 데이터 수집
+# 3. 재무 데이터 수집
 # ---------------------------------------------------------
 def get_fundamental_data(code):
     data = {'PER': 0, 'PBR': 0, 'Marcap': 0, 'ROE': 'N/A', 'OperatingProfit': 'N/A', 'Type': 'KR', 'Opinion': '', 'Revenue_Trend': [], 'PSR': 0}
     
     if code.isdigit():
         data['Type'] = 'KR'
-        
         try:
             url = f"https://finance.naver.com/item/main.naver?code={code}"
             headers = {'User-Agent': 'Mozilla/5.0'}
             response = requests.get(url, headers=headers)
             soup = BeautifulSoup(response.text, 'html.parser')
             
-            # 제목에 ETF, ETN이 포함되어 있는지 확인
-            try:
-                name = soup.select_one('.wrap_company h2 a').text
-                if 'ETF' in name or 'ETN' in name:
-                    data['Type'] = 'ETF'
-                    data['Opinion'] = "ℹ️ ETF/ETN 상품입니다. 개별 기업 분석(영업이익 등) 대신 차트와 추세를 참고하세요."
+            # ETF/ETN 여부 확인 (이름이나 태그로)
+            stock_name = ""
+            try: stock_name = soup.select_one('.wrap_company h2 a').text
             except: pass
-
+            
+            # ETF 판단 로직 강화
+            if 'ETF' in stock_name or 'ETN' in stock_name or 'KODEX' in stock_name or 'TIGER' in stock_name or 'ACE' in stock_name:
+                data['Type'] = 'ETF'
+                data['Opinion'] = "ℹ️ ETF 상품입니다. (기업 분석 제외)"
+            
             try: data['PER'] = float(soup.select_one('#_per').text.replace(',', ''))
             except: pass
             try: data['PBR'] = float(soup.select_one('#_pbr').text.replace(',', ''))
@@ -117,29 +110,20 @@ def get_fundamental_data(code):
                 data['Marcap'] = trillion + billion
             except: pass
 
-            # ETF가 아니면 재무제표 긁어오기
             if data['Type'] != 'ETF':
                 try:
                     dfs = pd.read_html(response.text, match='매출액')
                     if dfs:
                         fin_df = dfs[-1]
-                        target_col = -2
-                        
                         op_row = fin_df[fin_df.iloc[:, 0].str.contains('영업이익', na=False)]
-                        if not op_row.empty: 
-                            val = op_row.iloc[0, target_col]
-                            data['OperatingProfit'] = f"{val} 억원"
-                        
+                        if not op_row.empty: data['OperatingProfit'] = f"{op_row.iloc[0, -2]} 억원"
                         roe_row = fin_df[fin_df.iloc[:, 0].str.contains('ROE', na=False)]
-                        if not roe_row.empty: 
-                            val = roe_row.iloc[0, target_col]
-                            data['ROE'] = f"{val} %"
-                            
+                        if not roe_row.empty: data['ROE'] = f"{roe_row.iloc[0, -2]} %"
+                        
                         rev_row = fin_df[fin_df.iloc[:, 0].str.contains('매출액', na=False)]
                         if not rev_row.empty:
                             recent_revs = rev_row.iloc[0, 1:5].tolist()
                             data['Revenue_Trend'] = [str(x) for x in recent_revs if pd.notna(x)]
-                            
                             last_rev_str = str(recent_revs[-1]).replace(',', '')
                             if last_rev_str.replace('.', '', 1).isdigit():
                                 last_rev = float(last_rev_str) * 100000000
@@ -153,10 +137,7 @@ def get_fundamental_data(code):
         try:
             stock = yf.Ticker(code)
             info = stock.info
-            if info.get('quoteType') == 'ETF': 
-                data['Type'] = 'ETF'
-                data['Opinion'] = "ℹ️ 미국 ETF 상품입니다."
-            
+            if info.get('quoteType') == 'ETF': data['Type'] = 'ETF'
             data['PER'] = info.get('trailingPE', 0)
             data['PBR'] = info.get('priceToBook', 0)
             data['Marcap'] = info.get('marketCap', 0)
@@ -169,24 +150,18 @@ def get_fundamental_data(code):
     return data
 
 # ---------------------------------------------------------
-# 5. 차트 데이터 (안전장치)
+# 4. 차트 데이터
 # ---------------------------------------------------------
 @st.cache_data
 def get_stock_data(code):
     try:
         end = datetime.datetime.now()
         start = end - datetime.timedelta(days=365*3)
-        
-        # 1차: FinanceDataReader
         try:
-            if code.isdigit():
-                df = fdr.DataReader(code, start, end)
-                if df.empty: df = fdr.DataReader(f"{code}.KS", start, end)
-            else:
-                df = fdr.DataReader(code, start, end)
+            if code.isdigit(): df = fdr.DataReader(code, start, end)
+            else: df = fdr.DataReader(code, start, end)
         except: df = pd.DataFrame()
 
-        # 2차: Yahoo Finance
         if df.empty or len(df) < 10:
             try:
                 yf_ticker = f"{code}.KS" if code.isdigit() else code
@@ -206,7 +181,7 @@ def get_stock_data(code):
     except Exception as e: return None, str(e)
 
 # ---------------------------------------------------------
-# 6. 분석 로직
+# 5. 분석 로직
 # ---------------------------------------------------------
 def analyze_advanced(data_dict, fund_data):
     df = data_dict['D'].copy()
@@ -301,53 +276,56 @@ def sanitize_for_chart(df):
     return df.fillna(0)
 
 # ---------------------------------------------------------
-# 7. 화면 구성
+# 6. 화면 구성
 # ---------------------------------------------------------
 st.title("👨‍🏫 AI 주식 과외 선생님")
-st.caption("PLUS, ACE, SOL 포함 모든 ETF 검색 가능")
+st.caption("한국 전 종목(펩트론 등 코스닥 포함) + ETF + 미국주식")
 
-# 1. 데이터 로드 (모든 ETF + 주식)
-with st.spinner("종목 리스트 불러오는 중..."):
-    combined_list = get_combined_list()
+# 1. 데이터 로드 (내장 + ETF 전체)
+all_etfs = get_all_korean_etfs() # ETF 800개 로드
+static_stocks = pd.DataFrame(STATIC_STOCKS) # 대형주 로드
 
 # 2. 검색창
-search_keyword = st.text_input("종목명/ETF 입력 (예: PLUS, AI, 2차전지, 삼성)", placeholder="검색어를 입력하고 엔터를 누르세요")
+search_keyword = st.text_input("종목명/ETF 입력 (예: 펩트론, 현대차, PLUS, AI)", placeholder="검색어를 입력하고 엔터를 누르세요")
 
 selected_code = None
 selected_name = None
 
-# 3. 검색 로직
+# 3. 검색 로직 (순차적 검색)
 if search_keyword:
     search_keyword = search_keyword.upper().strip()
-    
-    # [A] 한국 종목 검색 (전체 리스트에서 검색)
-    results = combined_list[combined_list['Name'].str.contains(search_keyword, na=False)]
-    
-    # [B] 미국 주식 티커 처리
-    is_us_ticker = len(search_keyword) < 6 and search_keyword.isalpha()
-    
     options = {}
-    if not results.empty:
-        # 상위 100개만 표시
-        for index, row in results.head(100).iterrows():
-            options[f"{row['Name']} ({row['Code']})"] = row['Code']
     
-    if is_us_ticker:
+    # [1순위] 내장 대형주에서 찾기
+    res1 = static_stocks[static_stocks['Name'].str.contains(search_keyword, na=False)]
+    for i, r in res1.iterrows(): options[f"{r['Name']} ({r['Code']})"] = r['Code']
+    
+    # [2순위] ETF 전체 리스트에서 찾기
+    res2 = all_etfs[all_etfs['Name'].str.contains(search_keyword, na=False)]
+    for i, r in res2.iterrows(): options[f"{r['Name']} ({r['Code']})"] = r['Code']
+    
+    # [3순위] 네이버 실시간 검색 (펩트론 같은 코스닥 찾기용)
+    if not options:
+        naver_results = search_naver_stock_code(search_keyword)
+        for item in naver_results:
+            options[f"{item['Name']} ({item['Code']})"] = item['Code']
+            
+    # [4순위] 미국 주식
+    is_us = len(search_keyword) < 6 and search_keyword.isalpha()
+    if is_us:
         options[f"🇺🇸 미국주식: {search_keyword}"] = search_keyword
 
+    # 선택 박스
     if options:
-        selected_option = st.selectbox("⬇️ 검색 결과 중 하나를 선택하세요:", list(options.keys()))
+        selected_option = st.selectbox("⬇️ 검색 결과 선택:", list(options.keys()))
         selected_code = options[selected_option]
         selected_name = selected_option.split('(')[0].strip()
         
-        if st.button("🚀 선택한 종목 분석하기", type="primary"):
-            pass
+        if st.button("🚀 분석하기", type="primary"): pass
     else:
         st.error("검색 결과가 없습니다.")
 
-# ---------------------------------------------------------
-# 8. 분석 실행
-# ---------------------------------------------------------
+# 4. 분석 실행
 if selected_code:
     st.divider()
     st.info(f"선택된 종목: **{selected_name}** (코드: {selected_code})")
@@ -382,7 +360,7 @@ if selected_code:
             with c2:
                 st.write("#### 🏢 재무 요약")
                 if "ETF" in str(fund_data['Type']) or "ETF" in str(fund_data.get('Opinion')):
-                    st.info("ETF 상품입니다. (차트/수급 분석)")
+                    st.info("ETF 상품입니다. (차트 위주 분석)")
                 else:
                     f1, f2 = st.columns(2)
                     f1.metric("영업이익", str(fund_data.get('OperatingProfit', '-')))
