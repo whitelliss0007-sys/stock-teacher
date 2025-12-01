@@ -14,113 +14,101 @@ from plotly.subplots import make_subplots
 import requests
 from bs4 import BeautifulSoup
 import yfinance as yf
-import re # 한글 감지용
+import time
 
 st.set_page_config(page_title="AI 주식 과외 선생님", layout="wide", page_icon="👨‍🏫")
 
 # ---------------------------------------------------------
-# 0. [필수] 내장 코드북 (현대차 그룹 및 주요 그룹사 대거 추가)
+# 0. [필수] 내장 코드북
 # ---------------------------------------------------------
 STATIC_KRX_DATA = [
-    # [삼성 그룹]
-    {'Code': '005930', 'Name': '삼성전자'}, {'Code': '005935', 'Name': '삼성전자우'},
-    {'Code': '006400', 'Name': '삼성SDI'}, {'Code': '009150', 'Name': '삼성전기'},
-    {'Code': '207940', 'Name': '삼성바이오로직스'}, {'Code': '028260', 'Name': '삼성물산'},
-    {'Code': '010140', 'Name': '삼성중공업'}, {'Code': '032830', 'Name': '삼성생명'},
-    {'Code': '000810', 'Name': '삼성화재'}, {'Code': '018260', 'Name': '삼성에스디에스'},
-
-    # [현대차 그룹 - 여기가 중요!]
+    # [대형주 TOP 50]
+    {'Code': '005930', 'Name': '삼성전자'}, {'Code': '000660', 'Name': 'SK하이닉스'},
+    {'Code': '373220', 'Name': 'LG에너지솔루션'}, {'Code': '207940', 'Name': '삼성바이오로직스'},
     {'Code': '005380', 'Name': '현대차'}, {'Code': '000270', 'Name': '기아'},
-    {'Code': '012330', 'Name': '현대모비스'}, {'Code': '086280', 'Name': '현대글로비스'},
-    {'Code': '004020', 'Name': '현대제철'}, {'Code': '000720', 'Name': '현대건설'},
-    {'Code': '011210', 'Name': '현대위아'}, {'Code': '064350', 'Name': '현대로템'},
-    {'Code': '307950', 'Name': '현대오토에버'}, {'Code': '001450', 'Name': '현대해상'},
-    {'Code': '039030', 'Name': 'HD현대중공업'}, {'Code': '267250', 'Name': 'HD현대'},
-
-    # [SK 그룹]
-    {'Code': '000660', 'Name': 'SK하이닉스'}, {'Code': '034730', 'Name': 'SK'},
-    {'Code': '096770', 'Name': 'SK이노베이션'}, {'Code': '017670', 'Name': 'SK텔레콤'},
-    {'Code': '326030', 'Name': 'SK바이오팜'}, {'Code': '402340', 'Name': 'SK스퀘어'},
-
-    # [LG 그룹]
-    {'Code': '373220', 'Name': 'LG에너지솔루션'}, {'Code': '051910', 'Name': 'LG화학'},
-    {'Code': '066570', 'Name': 'LG전자'}, {'Code': '032640', 'Name': 'LG유플러스'},
-    {'Code': '034220', 'Name': 'LG디스플레이'}, {'Code': '003550', 'Name': 'LG'},
-
-    # [포스코 그룹]
-    {'Code': '005490', 'Name': 'POSCO홀딩스'}, {'Code': '003670', 'Name': '포스코퓨처엠'},
-    {'Code': '022100', 'Name': '포스코DX'}, {'Code': '058430', 'Name': '포스코인터내셔널'},
-
-    # [에코프로 그룹]
-    {'Code': '086520', 'Name': '에코프로'}, {'Code': '247540', 'Name': '에코프로비엠'},
-    {'Code': '450080', 'Name': '에코프로머티'}, {'Code': '383310', 'Name': '에코프로에이치엔'},
-
-    # [네이버/카카오]
+    {'Code': '068270', 'Name': '셀트리온'}, {'Code': '005490', 'Name': 'POSCO홀딩스'},
     {'Code': '035420', 'Name': 'NAVER'}, {'Code': '035720', 'Name': '카카오'},
-    {'Code': '323410', 'Name': '카카오뱅크'}, {'Code': '329180', 'Name': 'HD현대중공업'},
-
-    # [금융지주]
-    {'Code': '105560', 'Name': 'KB금융'}, {'Code': '055550', 'Name': '신한지주'},
-    {'Code': '086790', 'Name': '하나금융지주'}, {'Code': '316140', 'Name': '우리금융지주'},
-
-    # [방산/조선/에너지]
-    {'Code': '012450', 'Name': '한화에어로스페이스'}, {'Code': '042660', 'Name': '한화오션'},
-    {'Code': '015760', 'Name': '한국전력'}, {'Code': '011200', 'Name': 'HMM'},
-    {'Code': '010950', 'Name': 'S-Oil'}, {'Code': '034020', 'Name': '두산에너빌리티'},
-
-    # [주요 ETF (KODEX, TIGER 등)]
-    {'Code': '069500', 'Name': 'KODEX 200'}, {'Code': '122630', 'Name': 'KODEX 레버리지'},
-    {'Code': '114800', 'Name': 'KODEX 인버스'}, {'Code': '252670', 'Name': 'KODEX 200선물인버스2X'},
-    {'Code': '091160', 'Name': 'KODEX 반도체'}, {'Code': '226980', 'Name': 'KODEX 200중소형'},
+    {'Code': '006400', 'Name': '삼성SDI'}, {'Code': '051910', 'Name': 'LG화학'},
+    {'Code': '086520', 'Name': '에코프로'}, {'Code': '247540', 'Name': '에코프로비엠'},
+    {'Code': '000810', 'Name': '삼성화재'}, {'Code': '032830', 'Name': '삼성생명'},
+    {'Code': '055550', 'Name': '신한지주'}, {'Code': '105560', 'Name': 'KB금융'},
+    {'Code': '086790', 'Name': '하나금융지주'}, {'Code': '028260', 'Name': '삼성물산'},
+    {'Code': '012330', 'Name': '현대모비스'}, {'Code': '015760', 'Name': '한국전력'},
+    {'Code': '034020', 'Name': '두산에너빌리티'}, {'Code': '012450', 'Name': '한화에어로스페이스'},
+    {'Code': '042700', 'Name': '한미반도체'}, {'Code': '298020', 'Name': '효성중공업'},
+    {'Code': '004800', 'Name': '효성'}, {'Code': '298050', 'Name': '효성첨단소재'},
+    {'Code': '010120', 'Name': 'LS일렉트릭'}, {'Code': '003550', 'Name': 'LG'},
+    {'Code': '034730', 'Name': 'SK'}, {'Code': '017670', 'Name': 'SK텔레콤'},
+    {'Code': '011200', 'Name': 'HMM'}, {'Code': '010950', 'Name': 'S-Oil'},
+    {'Code': '003490', 'Name': '대한항공'}, {'Code': '090430', 'Name': '아모레퍼시픽'},
+    {'Code': '030200', 'Name': 'KT'}, {'Code': '032640', 'Name': 'LG유플러스'},
+    
+    # [ETF]
+    {'Code': '069500', 'Name': 'KODEX 200'}, {'Code': '122630', 'Name': 'KODEX 레버리지'}, 
+    {'Code': '114800', 'Name': 'KODEX 인버스'}, {'Code': '252670', 'Name': 'KODEX 200선물인버스2X'}, 
+    {'Code': '091160', 'Name': 'KODEX 반도체'}, {'Code': '422580', 'Name': 'KODEX 미국배당프리미엄액티브'},
+    {'Code': '305720', 'Name': 'KODEX 2차전지산업'}, {'Code': '455840', 'Name': 'KODEX AI반도체핵심장비'},
+    {'Code': '379800', 'Name': 'KODEX 미국빅테크10(H)'}, {'Code': '304940', 'Name': 'KODEX 미국나스닥100TR'},
     {'Code': '102110', 'Name': 'TIGER 200'}, {'Code': '305540', 'Name': 'TIGER 2차전지테마'},
-    {'Code': '360750', 'Name': 'TIGER 미국필라델피아반도체나스닥'}, {'Code': '133690', 'Name': 'TIGER 미국나스닥100'},
-    {'Code': '227570', 'Name': 'TIGER 200 중소형'}, {'Code': '411420', 'Name': 'ACE 미국S&P500'},
-    {'Code': '438560', 'Name': 'SOL 미국배당다우존스'}
+    {'Code': '360750', 'Name': 'TIGER 미국필라델피아반도체나스닥'}, {'Code': '371460', 'Name': 'TIGER 차이나전기차SOLACTIVE'},
+    {'Code': '133690', 'Name': 'TIGER 미국나스닥100'}, {'Code': '453950', 'Name': 'TIGER 미국테크TOP10 INDXX'},
+    {'Code': '411420', 'Name': 'ACE 미국S&P500'}, {'Code': '438560', 'Name': 'SOL 미국배당다우존스'}
 ]
 
 # ---------------------------------------------------------
-# 1. 네이버 실시간 검색 (검색창 연동)
+# 1. 종목 리스트 가져오기
 # ---------------------------------------------------------
-def search_naver_stocks(keyword):
-    """네이버 검색창 API를 사용하여 연관 종목을 가져옵니다."""
+@st.cache_data
+def get_krx_list():
     try:
-        url = f"https://ac.finance.naver.com/ac?q={keyword}&q_enc=euc-kr&st=111&r_format=json&r_enc=euc-kr"
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        response = requests.get(url, headers=headers)
-        data = response.json()
-        results = []
-        if 'items' in data and len(data['items']) > 0:
-            for item in data['items'][0]:
-                results.append({'Code': item[0], 'Name': item[1]})
-        return results
-    except: return []
+        df_static = pd.DataFrame(STATIC_KRX_DATA)
+        df_live = fdr.StockListing('KRX')
+        if not df_live.empty:
+            df_live = df_live[['Code', 'Name']]
+            df_combined = pd.concat([df_static, df_live], ignore_index=True)
+            return df_combined.drop_duplicates(subset=['Code'], keep='last')
+    except: pass
+    return pd.DataFrame(STATIC_KRX_DATA)
 
 # ---------------------------------------------------------
-# 2. 재무 데이터 수집
+# 2. 재무 데이터 수집 (EPS, 배당 추가)
 # ---------------------------------------------------------
 def get_fundamental_data(code):
-    data = {'PER': 0, 'PBR': 0, 'PSR': 0, 'Marcap': 0, 'ROE': 'N/A', 'OperatingProfit': 'N/A', 'Type': 'KR', 'Opinion': '', 'Revenue_Trend': []}
+    data = {
+        'PER': 0, 'PBR': 0, 'PSR': 0, 'Marcap': 0, 
+        'ROE': 'N/A', 'OperatingProfit': 'N/A', 
+        'EPS': 0, 'Dividend': 'N/A', # 신규 추가
+        'Type': 'KR', 'Opinion': '', 'Revenue_Trend': []
+    }
     
     if code.isdigit():
         data['Type'] = 'KR'
+        is_etf = False
+        for item in STATIC_KRX_DATA:
+            if item['Code'] == code and ('ETF' in item['Name'] or 'KODEX' in item['Name'] or 'TIGER' in item['Name']):
+                is_etf = True; break
+        
+        if is_etf:
+            data['Type'] = 'ETF'
+            data['Opinion'] = "ℹ️ ETF는 개별 기업 분석(영업이익 등)을 생략합니다."
+            return data
+
         try:
             url = f"https://finance.naver.com/item/main.naver?code={code}"
             headers = {'User-Agent': 'Mozilla/5.0'}
             response = requests.get(url, headers=headers)
             soup = BeautifulSoup(response.text, 'html.parser')
             
-            # ETF 판단
-            try:
-                name = soup.select_one('.wrap_company h2 a').text
-                if any(x in name.upper() for x in ['ETF', 'ETN', 'KODEX', 'TIGER', 'ACE', 'SOL', 'KBSTAR']):
-                    data['Type'] = 'ETF'
-                    data['Opinion'] = "ℹ️ ETF 상품입니다. (구성 종목과 추세 중심 분석)"
-            except: pass
-
+            # [기본 지표 긁어오기]
             try: data['PER'] = float(soup.select_one('#_per').text.replace(',', ''))
             except: pass
             try: data['PBR'] = float(soup.select_one('#_pbr').text.replace(',', ''))
             except: pass
+            try: data['EPS'] = int(soup.select_one('#_eps').text.replace(',', '')) # EPS 추가
+            except: pass
+            try: data['Dividend'] = soup.select_one('#_dvr').text + "%" # 배당률 추가
+            except: data['Dividend'] = "0%"
+
             try:
                 cap_text = soup.select_one('#_market_sum').text
                 parts = cap_text.split('조')
@@ -129,26 +117,34 @@ def get_fundamental_data(code):
                 data['Marcap'] = trillion + billion
             except: pass
 
-            if data['Type'] != 'ETF':
-                try:
-                    dfs = pd.read_html(response.text, match='매출액')
-                    if dfs:
-                        fin_df = dfs[-1]
-                        op_row = fin_df[fin_df.iloc[:, 0].str.contains('영업이익', na=False)]
-                        if not op_row.empty: data['OperatingProfit'] = f"{op_row.iloc[0, -2]} 억원"
-                        roe_row = fin_df[fin_df.iloc[:, 0].str.contains('ROE', na=False)]
-                        if not roe_row.empty: data['ROE'] = f"{roe_row.iloc[0, -2]} %"
-                        rev_row = fin_df[fin_df.iloc[:, 0].str.contains('매출액', na=False)]
-                        if not rev_row.empty:
-                            recent_revs = rev_row.iloc[0, 1:5].tolist()
-                            data['Revenue_Trend'] = [str(x) for x in recent_revs if pd.notna(x)]
-                            last_rev = float(str(recent_revs[-1]).replace(',', '')) * 100000000
-                            if last_rev > 0 and data['Marcap'] > 0:
-                                data['PSR'] = round(data['Marcap'] / last_rev, 2)
-                except: pass
+            # [재무제표 테이블 분석]
+            try:
+                dfs = pd.read_html(response.text, match='매출액')
+                if dfs:
+                    fin_df = dfs[-1]
+                    target_col = -2
+                    # 영업이익
+                    op_row = fin_df[fin_df.iloc[:, 0].str.contains('영업이익', na=False)]
+                    if not op_row.empty: 
+                        val = op_row.iloc[0, target_col]
+                        data['OperatingProfit'] = f"{val} 억원"
+                    # ROE
+                    roe_row = fin_df[fin_df.iloc[:, 0].str.contains('ROE', na=False)]
+                    if not roe_row.empty: 
+                        val = roe_row.iloc[0, target_col]
+                        data['ROE'] = f"{val} %"
+                    # 매출 & PSR
+                    rev_row = fin_df[fin_df.iloc[:, 0].str.contains('매출액', na=False)]
+                    if not rev_row.empty:
+                        recent_revs = rev_row.iloc[0, 1:5].tolist()
+                        data['Revenue_Trend'] = [str(x) for x in recent_revs if pd.notna(x)]
+                        last_rev = float(str(recent_revs[-1]).replace(',', '')) * 100000000
+                        if last_rev > 0 and data['Marcap'] > 0:
+                            data['PSR'] = round(data['Marcap'] / last_rev, 2)
+            except: pass
         except: pass
 
-    else: # 미국
+    else: # 미국 주식
         data['Type'] = 'US'
         try:
             stock = yf.Ticker(code)
@@ -156,8 +152,8 @@ def get_fundamental_data(code):
             if info.get('quoteType') == 'ETF': data['Type'] = 'ETF'
             data['PER'] = info.get('trailingPE', 0)
             data['PBR'] = info.get('priceToBook', 0)
-            data['PSR'] = info.get('priceToSalesTrailing12Months', 0)
             data['Marcap'] = info.get('marketCap', 0)
+            data['PSR'] = info.get('priceToSalesTrailing12Months', 0)
             if info.get('returnOnEquity'): data['ROE'] = f"{info.get('returnOnEquity')*100:.2f} %"
             if info.get('totalRevenue') and info.get('operatingMargins'):
                 op_val = info.get('totalRevenue') * info.get('operatingMargins')
@@ -192,6 +188,7 @@ def get_stock_data(code):
 
         df_weekly = df.resample('W').agg({'Open':'first', 'High':'max', 'Low':'min', 'Close':'last', 'Volume':'sum'})
         df_monthly = df.resample('M').agg({'Open':'first', 'High':'max', 'Low':'min', 'Close':'last', 'Volume':'sum'})
+
         return {'D': df, 'W': df_weekly, 'M': df_monthly}, None
     except Exception as e: return None, str(e)
 
@@ -219,11 +216,12 @@ def analyze_advanced(data_dict, fund_data):
 
     df = df.fillna(0)
     curr = df.iloc[-1]; prev = df.iloc[-2]
+    
     trend_score = 0; price_score = 0; timing_score = 0; fund_score = 0
     report = []
 
     # 1. 추세
-    report.append("#### 1️⃣ 추세 분석")
+    report.append("#### 1️⃣ 추세 분석 (Trend)")
     if curr['ma5'] > curr['ma20']:
         trend_score += 15
         report.append("- ✅ **단기 상승 (+15점)**: 5일선 > 20일선. 매수세 우위.")
@@ -258,7 +256,7 @@ def analyze_advanced(data_dict, fund_data):
         timing_score += 5
         report.append(f"- ➖ **안정 (RSI {curr['rsi']:.0f}) (+5점)**")
 
-    # 4. 가치
+    # 4. 가치 (배당 추가)
     report.append("\n#### 4️⃣ 기업 가치")
     if fund_data['Type'] == 'ETF' or fund_data['Type'] == 'US':
         fund_score += 10
@@ -266,8 +264,6 @@ def analyze_advanced(data_dict, fund_data):
     else:
         per = fund_data.get('PER', 0)
         pbr = fund_data.get('PBR', 0)
-        psr = fund_data.get('PSR', 0)
-        op = fund_data.get('OperatingProfit', 'N/A')
         
         if per > 0:
             if per < 15: fund_score += 5; report.append(f"- ✅ **저평가 (PER {per})**")
@@ -275,9 +271,17 @@ def analyze_advanced(data_dict, fund_data):
             else: fund_score += 5; report.append(f"- ➖ **적정 (PER {per})**")
             
             if pbr < 1.2: fund_score += 5; report.append(f"- ✅ **자산주 (PBR {pbr})**")
-            if psr > 0 and psr < 3.0: fund_score += 5; report.append(f"- ✅ **매출 대비 저평가 (PSR {psr})**")
-            if "억원" in str(op) and not str(op).startswith("-"): report.append(f"- ✅ **영업이익 흑자**: {op}")
-        else: report.append("- ℹ️ 재무 정보 부족")
+            
+            # 배당 평가
+            div_str = str(fund_data.get('Dividend', '0%')).replace('%','')
+            try:
+                div = float(div_str)
+                if div > 3.0: 
+                    fund_score += 5
+                    report.append(f"- 💰 **고배당 ({div}%)**: 은행 이자보다 쏠쏠합니다.")
+            except: pass
+        else:
+            report.append("- ℹ️ 재무 정보 부족")
 
     total_score = max(0, min(100, trend_score + price_score + timing_score + fund_score))
     return total_score, report, df, trend_score, price_score, timing_score, fund_score
@@ -288,12 +292,12 @@ def sanitize_for_chart(df):
     return df.fillna(0)
 
 # ---------------------------------------------------------
-# 5. 우량주 발굴
+# 5. [업그레이드] 우량주 발굴 로직 (상세 지표 + 기준표)
 # ---------------------------------------------------------
 def scan_undervalued_stocks():
     gems = []
-    # 내장 데이터 중 ETF가 아닌 일반 기업만 필터링
     target_stocks = [s for s in STATIC_KRX_DATA if 'KODEX' not in s['Name'] and 'TIGER' not in s['Name'] and 'ACE' not in s['Name']]
+    
     progress_text = "보물을 찾는 중입니다... 잠시만 기다려주세요."
     my_bar = st.progress(0, text=progress_text)
     
@@ -303,16 +307,22 @@ def scan_undervalued_stocks():
             f_data = get_fundamental_data(stock['Code'])
             per = f_data.get('PER', 0)
             pbr = f_data.get('PBR', 0)
+            eps = f_data.get('EPS', 0) # EPS 추가
+            div = str(f_data.get('Dividend', 'N/A')) # 배당 추가
+            
             roe_str = str(f_data.get('ROE', '0')).replace('%', '').strip()
             roe = float(roe_str) if roe_str.replace('.', '', 1).isdigit() else 0
             
             reasons = []
-            if 0 < per <= 15: reasons.append(f"💰 **쌉니다 (PER {per})**: 치킨집 본전 뽑는데 {per}년.")
-            if 0 < pbr <= 1.2: reasons.append(f"🏗️ **안전합니다 (PBR {pbr})**: 망해도 본전은 건집니다.")
-            if roe >= 10: reasons.append(f"👨‍🍳 **장사의 신 (ROE {roe}%)**: 돈 굴리는 실력이 좋습니다.")
+            # 기준 비교 설명 추가
+            if 0 < per <= 15: reasons.append(f"💰 **쌉니다 (PER {per})**\n(기준: 15 이하면 저평가)")
+            if 0 < pbr <= 1.2: reasons.append(f"🏗️ **안전합니다 (PBR {pbr})**\n(기준: 1 이하면 자산가치 우수)")
+            if roe >= 10: reasons.append(f"👨‍🍳 **장사의 신 (ROE {roe}%)**\n(기준: 10% 이상이면 훌륭)")
+            
             op = f_data.get('OperatingProfit', 'N/A')
             if "억원" not in str(op) or str(op).startswith("-"): continue
             
+            # 조건 2개 이상이면 추천
             if len(reasons) >= 2:
                 gems.append({'Name': stock['Name'], 'Code': stock['Code'], 'Reasons': reasons, 'Data': f_data})
         except: continue
@@ -320,48 +330,31 @@ def scan_undervalued_stocks():
     return gems
 
 # ---------------------------------------------------------
-# 6. 화면 구성 (한글 오인식 방지 검색창)
+# 6. 화면 구성
 # ---------------------------------------------------------
 st.title("👨‍🏫 AI 주식 과외 선생님")
-tab_search, tab_recommend = st.tabs(["🔍 종목 분석 (검색)", "💎 우량주 발굴 (AI 추천)"])
+tab_search, tab_recommend = st.tabs(["🔍 종목 분석", "💎 우량주 발굴"])
 
+# === 탭 1 ===
 with tab_search:
     st.caption("한국 전 종목(ETF 포함) + 미국 주식 + PSR/매출 분석")
-    search_keyword = st.text_input("종목명/ETF 입력", placeholder="현대차, 펩트론, KODEX, 테슬라 등...")
+    krx_list = get_krx_list()
+    search_keyword = st.text_input("종목명/ETF 입력", placeholder="삼성전자, KODEX, 테슬라 등...")
     
     selected_code = None
     selected_name = None
 
     if search_keyword:
-        search_keyword = search_keyword.strip()
+        search_keyword = search_keyword.upper().strip()
+        results = krx_list[krx_list['Name'].str.contains(search_keyword, na=False)]
+        is_us_ticker = len(search_keyword) < 6 and search_keyword.isalpha()
+        
         options = {}
-        
-        # [A] 내장 코드북에서 1차 검색 (가장 빠름)
-        static_df = pd.DataFrame(STATIC_KRX_DATA)
-        res1 = static_df[static_df['Name'].str.contains(search_keyword, na=False)]
-        for i, row in res1.iterrows(): options[f"[KR] {row['Name']} ({row['Code']})"] = row['Code']
-        
-        # [B] 네이버 실시간 검색 (보완)
-        naver_results = search_naver_stocks(search_keyword) if 'search_naver_stocks' in globals() else [] # 함수가 없을 경우 대비
-        # 여기서 함수를 정의해버림
-        def search_naver_stocks_local(keyword):
-            try:
-                url = f"https://ac.finance.naver.com/ac?q={keyword}&q_enc=euc-kr&st=111&r_format=json&r_enc=euc-kr"
-                resp = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}); data = resp.json()
-                res = []
-                if 'items' in data and len(data['items']) > 0:
-                    for item in data['items'][0]: res.append({'Code': item[0], 'Name': item[1]})
-                return res
-            except: return []
-            
-        naver_res = search_naver_stocks_local(search_keyword)
-        for item in naver_res:
-            options[f"[KR] {item['Name']} ({item['Code']})"] = item['Code']
-        
-        # [C] 미국 주식 (한글이 포함되면 아예 옵션에서 뺌!)
-        is_hangul = re.search('[가-힣]', search_keyword) is not None
-        if not is_hangul and len(search_keyword) < 6:
-            options[f"[US] 미국주식: {search_keyword.upper()}"] = search_keyword.upper()
+        if not results.empty:
+            for index, row in results.head(50).iterrows():
+                options[f"{row['Name']} ({row['Code']})"] = row['Code']
+        if is_us_ticker:
+            options[f"🇺🇸 미국주식: {search_keyword}"] = search_keyword
 
         if options:
             selected_option = st.selectbox("⬇️ 검색 결과 선택:", list(options.keys()))
@@ -373,13 +366,9 @@ with tab_search:
 
     if selected_code:
         st.divider()
-        st.info(f"선택된 종목: **{selected_name}** (코드: {selected_code})")
-        
         fund_data = {}
-        with st.spinner("재무 데이터 수집 중..."):
+        with st.spinner("데이터 분석 중..."):
             fund_data = get_fundamental_data(selected_code)
-
-        with st.spinner("차트 데이터 분석 중..."):
             data_dict, err = get_stock_data(selected_code)
             
             if err:
@@ -401,13 +390,17 @@ with tab_search:
                     elif score <= 40: st.error("관망/매도")
                     else: st.warning("중립")
                 with c2:
+                    st.write("#### 🏢 재무 요약")
                     f1, f2 = st.columns(2)
-                    f1.metric("영업이익", str(fund_data.get('OperatingProfit', '-')))
-                    f1.metric("PER", fund_data.get('PER', 0))
-                    f2.metric("PSR", fund_data.get('PSR', 0))
-                    f2.metric("PBR", fund_data.get('PBR', 0))
-                    if fund_data.get('Revenue_Trend'):
-                        st.caption(f"매출: {' -> '.join(fund_data['Revenue_Trend'])}")
+                    # 영업이익
+                    f1.metric("영업이익", str(fund_data.get('OperatingProfit', '-')), help="본업으로 번 돈")
+                    # EPS (1주당 순이익)
+                    eps_val = fund_data.get('EPS', '-')
+                    f1.metric("EPS (1주당 이익)", f"{eps_val}원" if eps_val!='-' else '-', help="주식 1장당 버는 돈")
+                    # 배당수익률
+                    f2.metric("배당수익률", fund_data.get('Dividend', '-'), help="1년 동안 주는 보너스 이자율")
+                    # PER
+                    f2.metric("PER (본전시간)", fund_data.get('PER', 0), help="낮을수록 저평가 (15 이하 좋음)")
                 
                 with st.expander("📝 상세 분석 내용", expanded=True):
                     for r in report: st.markdown(r)
@@ -428,22 +421,30 @@ with tab_search:
                 with tab2: st.plotly_chart(draw_chart(data_dict['W'], "주봉"), use_container_width=True)
                 with tab3: st.plotly_chart(draw_chart(data_dict['M'], "월봉"), use_container_width=True)
 
+# === 탭 2: 우량주 발굴 ===
 with tab_recommend:
     st.header("💎 숨겨진 보석(우량주) 찾기")
-    st.write("AI가 내장된 주요 종목(100개)을 샅샅이 뒤져서 **싸고, 돈 잘 벌고, 튼튼한** 기업을 찾아냅니다.")
-    if st.button("🚀 보물 찾기 시작!", type="primary"):
+    st.write("AI가 주요 종목을 샅샅이 뒤져서 **싸고, 돈 잘 벌고, 튼튼한** 기업을 찾아냅니다.")
+    
+    if st.button("🚀 보물 찾기 시작! (약 15초 소요)", type="primary"):
         gems = scan_undervalued_stocks()
         if gems:
             st.success(f"총 {len(gems)}개의 보물을 발견했습니다!")
             for gem in gems:
                 with st.container():
                     st.subheader(f"🎁 {gem['Name']} ({gem['Code']})")
-                    c1, c2 = st.columns([2, 1])
+                    c1, c2 = st.columns([1.5, 1])
                     with c1:
+                        # 추천 사유에 기준 비교 추가
                         for reason in gem['Reasons']: st.info(reason)
                     with c2:
-                        st.metric("PER", gem['Data'].get('PER'))
-                        st.metric("PBR", gem['Data'].get('PBR'))
+                        # 재무 지표 상세 표시
+                        st.write("**핵심 지표**")
+                        m1, m2 = st.columns(2)
+                        m1.metric("EPS", f"{gem['Data'].get('EPS',0):,}원")
+                        m2.metric("배당", gem['Data'].get('Dividend', '-'))
+                        m1.metric("영업이익", gem['Data'].get('OperatingProfit', '-'))
+                        m2.metric("ROE", gem['Data'].get('ROE', '-'))
                     st.divider()
         else:
             st.warning("아쉽게도 완벽한 조건에 맞는 보물을 찾지 못했습니다.")
