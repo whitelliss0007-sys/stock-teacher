@@ -14,14 +14,33 @@ from plotly.subplots import make_subplots
 import requests
 from bs4 import BeautifulSoup
 import yfinance as yf
+import json
 
 st.set_page_config(page_title="AI 주식 과외 선생님", layout="wide", page_icon="👨‍🏫")
 
 # ---------------------------------------------------------
-# 0. [필수] 내장 코드북 (서버 차단 시 비상용)
+# 1. [핵심] 네이버에서 모든 ETF 명단 가져오기 (마법의 열쇠)
 # ---------------------------------------------------------
-STATIC_KRX_DATA = [
-    # [대형주 TOP 50]
+@st.cache_data
+def get_all_korean_etfs():
+    """네이버 파이낸스에서 현재 상장된 800개 이상의 모든 ETF 리스트를 가져옵니다."""
+    try:
+        url = "https://finance.naver.com/api/sise/etfItemList.nhn"
+        resp = requests.get(url)
+        data = resp.json()
+        
+        # 데이터프레임으로 변환
+        etf_list = pd.DataFrame(data['result']['etfItemList'])
+        etf_list = etf_list[['itemcode', 'itemname']]
+        etf_list.columns = ['Code', 'Name']
+        return etf_list
+    except:
+        return pd.DataFrame() # 실패 시 빈 표 반환
+
+# ---------------------------------------------------------
+# 2. 내장 코드북 (주요 주식 대형주 비상용)
+# ---------------------------------------------------------
+STATIC_STOCKS = [
     {'Code': '005930', 'Name': '삼성전자'}, {'Code': '000660', 'Name': 'SK하이닉스'},
     {'Code': '373220', 'Name': 'LG에너지솔루션'}, {'Code': '207940', 'Name': '삼성바이오로직스'},
     {'Code': '005380', 'Name': '현대차'}, {'Code': '000270', 'Name': '기아'},
@@ -35,89 +54,64 @@ STATIC_KRX_DATA = [
     {'Code': '015760', 'Name': '한국전력'}, {'Code': '034020', 'Name': '두산에너빌리티'},
     {'Code': '012450', 'Name': '한화에어로스페이스'}, {'Code': '042700', 'Name': '한미반도체'},
     {'Code': '298020', 'Name': '효성중공업'}, {'Code': '004800', 'Name': '효성'},
-    
-    # [KODEX ETF]
-    {'Code': '069500', 'Name': 'KODEX 200'}, {'Code': '122630', 'Name': 'KODEX 레버리지'}, 
-    {'Code': '114800', 'Name': 'KODEX 인버스'}, {'Code': '252670', 'Name': 'KODEX 200선물인버스2X'}, 
-    {'Code': '091160', 'Name': 'KODEX 반도체'}, {'Code': '422580', 'Name': 'KODEX 미국배당프리미엄액티브'},
-    {'Code': '305720', 'Name': 'KODEX 2차전지산업'}, {'Code': '278530', 'Name': 'KODEX 200TR'},
-    {'Code': '214980', 'Name': 'KODEX 단기채권Plus'}, {'Code': '455840', 'Name': 'KODEX AI반도체핵심장비'},
-    {'Code': '229200', 'Name': 'KODEX 코스닥150'}, {'Code': '233740', 'Name': 'KODEX 코스닥150레버리지'},
-    {'Code': '251340', 'Name': 'KODEX 코스닥150선물인버스'}, {'Code': '379800', 'Name': 'KODEX 미국빅테크10(H)'},
-    {'Code': '304940', 'Name': 'KODEX 미국나스닥100TR'}, {'Code': '091170', 'Name': 'KODEX 은행'},
-    
-    # [TIGER ETF]
-    {'Code': '102110', 'Name': 'TIGER 200'}, {'Code': '305540', 'Name': 'TIGER 2차전지테마'},
-    {'Code': '360750', 'Name': 'TIGER 미국필라델피아반도체나스닥'}, {'Code': '371460', 'Name': 'TIGER 차이나전기차SOLACTIVE'},
-    {'Code': '133690', 'Name': 'TIGER 미국나스닥100'}, {'Code': '453950', 'Name': 'TIGER 미국테크TOP10 INDXX'},
-    {'Code': '327630', 'Name': 'TIGER 글로벌리튬&2차전지SOLACTIVE(합성)'}, {'Code': '465640', 'Name': 'TIGER 미국배당+7%프리미엄다우존스'},
-    
-    # [ACE / SOL / KBSTAR]
-    {'Code': '411420', 'Name': 'ACE 미국S&P500'}, {'Code': '438560', 'Name': 'SOL 미국배당다우존스'}, 
-    {'Code': '251350', 'Name': 'KBSTAR 200선물인버스2X'}
+    {'Code': '298050', 'Name': '효성첨단소재'}, {'Code': '298000', 'Name': '효성티앤씨'},
+    {'Code': '010120', 'Name': 'LS일렉트릭'}, {'Code': '003550', 'Name': 'LG'},
+    {'Code': '034730', 'Name': 'SK'}, {'Code': '017670', 'Name': 'SK텔레콤'}
 ]
 
 # ---------------------------------------------------------
-# 1. 종목 리스트 가져오기 (하이브리드)
+# 3. 통합 검색 리스트 생성 (주식 + 모든 ETF)
 # ---------------------------------------------------------
 @st.cache_data
-def get_krx_list():
+def get_combined_list():
+    # 1. 내장 주식 데이터
+    stocks = pd.DataFrame(STATIC_STOCKS)
+    
+    # 2. 실시간 주식 데이터 (서버가 허용하면)
     try:
-        df_static = pd.DataFrame(STATIC_KRX_DATA)
-        # 실시간 데이터 시도 (실패시 내장 데이터만 사용)
-        df_live = fdr.StockListing('KRX')
-        if not df_live.empty:
-            df_live = df_live[['Code', 'Name']]
-            df_combined = pd.concat([df_static, df_live], ignore_index=True)
-            return df_combined.drop_duplicates(subset=['Code'], keep='last')
+        live_stocks = fdr.StockListing('KRX')
+        if not live_stocks.empty:
+            stocks = live_stocks[['Code', 'Name']]
     except: pass
-    return pd.DataFrame(STATIC_KRX_DATA)
+
+    # 3. [핵심] 모든 ETF 데이터 (네이버 API)
+    etfs = get_all_korean_etfs()
+    
+    # 4. 합치기
+    combined = pd.concat([stocks, etfs], ignore_index=True)
+    return combined.drop_duplicates(subset=['Code'])
 
 # ---------------------------------------------------------
-# 2. 재무 데이터 수집 (오류 수정됨)
+# 4. 재무 데이터 수집
 # ---------------------------------------------------------
 def get_fundamental_data(code):
     data = {'PER': 0, 'PBR': 0, 'Marcap': 0, 'ROE': 'N/A', 'OperatingProfit': 'N/A', 'Type': 'KR', 'Opinion': '', 'Revenue_Trend': [], 'PSR': 0}
     
-    # [한국 주식]
     if code.isdigit():
+        data['Type'] = 'KR'
+        
+        # ETF 식별 (네이버 페이지 크롤링 시 제목 등으로 판단)
+        # 하지만 일단 분석을 진행하며 데이터가 없으면 ETF로 간주하는 방식 사용
+        
         try:
             url = f"https://finance.naver.com/item/main.naver?code={code}"
             headers = {'User-Agent': 'Mozilla/5.0'}
             response = requests.get(url, headers=headers)
             soup = BeautifulSoup(response.text, 'html.parser')
-
-            # [수정] 이름으로 ETF 판별 (페이지 내용 X)
-            stock_name = ""
+            
+            # 제목에 ETF나 ETN이 들어가는지 확인
             try:
-                stock_name = soup.select_one('.wrap_company h2 a').text
+                name = soup.select_one('.wrap_company h2 a').text
+                if 'ETF' in name or 'ETN' in name:
+                    data['Type'] = 'ETF'
+                    data['Opinion'] = "ℹ️ ETF 상품입니다. 영업이익 대신 차트와 추세를 참고하세요."
             except: pass
-            
-            # 이름에 ETF 키워드가 있으면 ETF로 분류
-            etf_keywords = ['KODEX', 'TIGER', 'ACE', 'KBSTAR', 'SOL', 'KOSEF', 'ARIRANG', 'HANARO', 'ETF', 'ETN']
-            if any(k in stock_name.upper() for k in etf_keywords):
-                data['Type'] = 'ETF'
-                data['Opinion'] = "ℹ️ ETF/ETN 상품입니다. 영업이익/PER 분석 대신 차트와 추세를 참고하세요."
-                # ETF도 시가총액은 있음
-                try:
-                    cap_text = soup.select_one('#_market_sum').text
-                    parts = cap_text.split('조')
-                    trillion = int(parts[0].replace(',', '').strip()) * 1000000000000
-                    billion = int(parts[1].replace(',', '').strip()) * 100000000 if len(parts) > 1 else 0
-                    data['Marcap'] = trillion + billion
-                except: pass
-                return data
 
-            # 여기서부터는 일반 기업 로직
-            data['Type'] = 'KR'
-            
-            # PER/PBR
             try: data['PER'] = float(soup.select_one('#_per').text.replace(',', ''))
             except: pass
             try: data['PBR'] = float(soup.select_one('#_pbr').text.replace(',', ''))
             except: pass
             
-            # 시가총액
             try:
                 cap_text = soup.select_one('#_market_sum').text
                 parts = cap_text.split('조')
@@ -126,47 +120,44 @@ def get_fundamental_data(code):
                 data['Marcap'] = trillion + billion
             except: pass
 
-            # 영업이익/매출/ROE/PSR
+            # 영업이익/매출 등 (ETF는 여기서 실패하므로 자연스럽게 패스됨)
             try:
                 dfs = pd.read_html(response.text, match='매출액')
                 if dfs:
                     fin_df = dfs[-1]
-                    target_col = -2 # 최근 연간 확정 실적
+                    target_col = -2
                     
-                    # 영업이익
                     op_row = fin_df[fin_df.iloc[:, 0].str.contains('영업이익', na=False)]
                     if not op_row.empty: 
                         val = op_row.iloc[0, target_col]
                         data['OperatingProfit'] = f"{val} 억원"
                     
-                    # ROE
                     roe_row = fin_df[fin_df.iloc[:, 0].str.contains('ROE', na=False)]
                     if not roe_row.empty: 
                         val = roe_row.iloc[0, target_col]
                         data['ROE'] = f"{val} %"
                         
-                    # 매출액 추이 & PSR
                     rev_row = fin_df[fin_df.iloc[:, 0].str.contains('매출액', na=False)]
                     if not rev_row.empty:
-                        # 최근 4년치 매출
                         recent_revs = rev_row.iloc[0, 1:5].tolist()
                         data['Revenue_Trend'] = [str(x) for x in recent_revs if pd.notna(x)]
                         
-                        # PSR 계산 (시총 / 최근 매출)
                         last_rev_str = str(recent_revs[-1]).replace(',', '')
                         if last_rev_str.replace('.', '', 1).isdigit():
-                            last_rev = float(last_rev_str) * 100000000 # 억 단위 -> 원 단위
+                            last_rev = float(last_rev_str) * 100000000
                             if last_rev > 0 and data['Marcap'] > 0:
                                 data['PSR'] = round(data['Marcap'] / last_rev, 2)
             except: pass
         except: pass
 
-    else: # 미국 주식
+    else:
         data['Type'] = 'US'
         try:
             stock = yf.Ticker(code)
             info = stock.info
-            if info.get('quoteType') == 'ETF': data['Type'] = 'ETF'
+            if info.get('quoteType') == 'ETF': 
+                data['Type'] = 'ETF'
+                data['Opinion'] = "ℹ️ 미국 ETF 상품입니다."
             
             data['PER'] = info.get('trailingPE', 0)
             data['PBR'] = info.get('priceToBook', 0)
@@ -180,7 +171,7 @@ def get_fundamental_data(code):
     return data
 
 # ---------------------------------------------------------
-# 3. 차트 데이터 (안전장치)
+# 5. 차트 데이터 (안전장치)
 # ---------------------------------------------------------
 @st.cache_data
 def get_stock_data(code):
@@ -188,6 +179,7 @@ def get_stock_data(code):
         end = datetime.datetime.now()
         start = end - datetime.timedelta(days=365*3)
         
+        # 1차: FinanceDataReader
         try:
             if code.isdigit():
                 df = fdr.DataReader(code, start, end)
@@ -196,7 +188,7 @@ def get_stock_data(code):
                 df = fdr.DataReader(code, start, end)
         except: df = pd.DataFrame()
 
-        # 비상용 (야후)
+        # 2차: Yahoo Finance
         if df.empty or len(df) < 10:
             try:
                 yf_ticker = f"{code}.KS" if code.isdigit() else code
@@ -209,7 +201,6 @@ def get_stock_data(code):
         df = df.dropna(subset=['Close'])
         if df.empty or len(df) < 60: return None, "데이터 부족"
 
-        # 주봉/월봉
         df_weekly = df.resample('W').agg({'Open':'first', 'High':'max', 'Low':'min', 'Close':'last', 'Volume':'sum'})
         df_monthly = df.resample('M').agg({'Open':'first', 'High':'max', 'Low':'min', 'Close':'last', 'Volume':'sum'})
 
@@ -217,12 +208,10 @@ def get_stock_data(code):
     except Exception as e: return None, str(e)
 
 # ---------------------------------------------------------
-# 4. 분석 로직 (설명 강화)
+# 6. 분석 로직
 # ---------------------------------------------------------
 def analyze_advanced(data_dict, fund_data):
     df = data_dict['D'].copy()
-    
-    # 안전장치
     for col in ['ma5', 'ma20', 'ma60', 'rsi', 'macd', 'macd_signal', 'macd_diff', 'bb_h', 'bb_l']:
         if col not in df.columns: df[col] = 0.0
 
@@ -247,7 +236,7 @@ def analyze_advanced(data_dict, fund_data):
     report = []
 
     # 1. 추세
-    report.append("#### 1️⃣ 추세 분석 (Trend)")
+    report.append("#### 1️⃣ 추세 분석")
     if curr['ma5'] > curr['ma20']:
         trend_score += 15
         report.append("- ✅ **단기 상승 (+15점)**: 5일선 > 20일선. 매수세 우위.")
@@ -262,7 +251,7 @@ def analyze_advanced(data_dict, fund_data):
         report.append("- ✅ **중기 상승 (+5점)**: 60일선 위 안착.")
 
     # 2. 가격
-    report.append("\n#### 2️⃣ 가격 위치 (Price Action)")
+    report.append("\n#### 2️⃣ 가격 위치")
     if curr['Close'] <= curr['bb_l'] * 1.02:
         price_score += 15
         report.append("- ✅ **바닥권 (+15점)**: 반등 기대.")
@@ -273,7 +262,7 @@ def analyze_advanced(data_dict, fund_data):
         report.append("- ➖ **중간 지대 (+5점)**")
 
     # 3. 심리
-    report.append("\n#### 3️⃣ 투자 심리 (RSI)")
+    report.append("\n#### 3️⃣ 투자 심리")
     if curr['rsi'] < 30:
         timing_score += 20
         report.append(f"- 🚀 **과매도 (RSI {curr['rsi']:.0f}) (+20점)**: 저점 매수 기회.")
@@ -285,7 +274,7 @@ def analyze_advanced(data_dict, fund_data):
 
     # 4. 가치
     report.append("\n#### 4️⃣ 기업 가치")
-    if fund_data['Type'] == 'ETF' or fund_data['Type'] == 'US':
+    if fund_data['Type'] == 'ETF':
         fund_score += 10
         report.append("- ℹ️ **ETF/해외주식**: 차트와 추세 위주로 분석합니다.")
     else:
@@ -295,21 +284,13 @@ def analyze_advanced(data_dict, fund_data):
         op = fund_data.get('OperatingProfit', 'N/A')
         
         if per > 0:
-            if per < 15: 
-                fund_score += 5; report.append(f"- ✅ **저평가 (PER {per})**")
-            elif per > 50:
-                 report.append(f"- ⚠️ **고평가 (PER {per})**")
-            else:
-                 fund_score += 5; report.append(f"- ➖ **적정 (PER {per})**")
+            if per < 15: fund_score += 5; report.append(f"- ✅ **저평가 (PER {per})**")
+            elif per > 50: report.append(f"- ⚠️ **고평가 (PER {per})**")
+            else: fund_score += 5; report.append(f"- ➖ **적정 (PER {per})**")
             
-            if pbr < 1.2:
-                fund_score += 5; report.append(f"- ✅ **자산주 (PBR {pbr})**")
-            
-            if psr > 0 and psr < 3.0:
-                fund_score += 5; report.append(f"- ✅ **매출 대비 저평가 (PSR {psr})**")
-
-            if "억원" in str(op) and not str(op).startswith("-"):
-                 report.append(f"- ✅ **영업이익 흑자**: {op}")
+            if pbr < 1.2: fund_score += 5; report.append(f"- ✅ **자산주 (PBR {pbr})**")
+            if psr > 0 and psr < 3.0: fund_score += 5; report.append(f"- ✅ **매출 대비 저평가 (PSR {psr})**")
+            if "억원" in str(op) and not str(op).startswith("-"): report.append(f"- ✅ **영업이익 흑자**: {op}")
         else:
             report.append("- ℹ️ 재무 정보 부족")
 
@@ -322,26 +303,34 @@ def sanitize_for_chart(df):
     return df.fillna(0)
 
 # ---------------------------------------------------------
-# 5. 화면 구성
+# 7. 화면 구성
 # ---------------------------------------------------------
 st.title("👨‍🏫 AI 주식 과외 선생님")
-st.caption("한국/미국 주식 + ETF + PSR/매출 분석")
+st.caption("PLUS, ACE, SOL 포함 모든 ETF 검색 가능")
 
-krx_list = get_krx_list()
+# 1. 데이터 로드 (ETF 800개 + 주식)
+with st.spinner("종목 리스트 불러오는 중..."):
+    combined_list = get_combined_list()
 
-search_keyword = st.text_input("종목명/ETF 입력 (예: 반도체, KODEX, 효성, 삼성)", placeholder="검색어를 입력하고 엔터를 누르세요")
+# 2. 검색창
+search_keyword = st.text_input("종목명/ETF 입력 (예: PLUS, AI, 2차전지, 삼성)", placeholder="검색어를 입력하고 엔터를 누르세요")
 
 selected_code = None
 selected_name = None
 
 if search_keyword:
     search_keyword = search_keyword.upper().strip()
-    results = krx_list[krx_list['Name'].str.contains(search_keyword, na=False)]
+    
+    # [A] 한국 종목/ETF 검색
+    results = combined_list[combined_list['Name'].str.contains(search_keyword, na=False)]
+    
+    # [B] 미국 주식
     is_us_ticker = len(search_keyword) < 6 and search_keyword.isalpha()
     
     options = {}
     if not results.empty:
-        for index, row in results.head(50).iterrows():
+        # 상위 100개 표시
+        for index, row in results.head(100).iterrows():
             options[f"{row['Name']} ({row['Code']})"] = row['Code']
     
     if is_us_ticker:
@@ -357,9 +346,7 @@ if search_keyword:
     else:
         st.error("검색 결과가 없습니다.")
 
-# ---------------------------------------------------------
-# 6. 분석 실행
-# ---------------------------------------------------------
+# 분석 실행
 if selected_code:
     st.divider()
     st.info(f"선택된 종목: **{selected_name}** (코드: {selected_code})")
@@ -378,7 +365,6 @@ if selected_code:
             score, report, df, ts, ps, tis, fs = analyze_advanced(data_dict, fund_data)
             curr_price = df.iloc[-1]['Close']
             
-            # 상단 정보
             st.header(f"📊 {selected_name}")
             c1, c2 = st.columns([1, 1.3])
             
@@ -394,7 +380,7 @@ if selected_code:
 
             with c2:
                 st.write("#### 🏢 재무 요약")
-                if "ETF" in str(fund_data['Type']):
+                if "ETF" in str(fund_data['Type']) or "ETF" in str(fund_data.get('Opinion')):
                     st.info("ETF 상품입니다. (차트 위주 분석)")
                 else:
                     f1, f2 = st.columns(2)
@@ -402,9 +388,8 @@ if selected_code:
                     f1.metric("PER", fund_data.get('PER', 0))
                     f2.metric("PSR", fund_data.get('PSR', 0))
                     f2.metric("PBR", fund_data.get('PBR', 0))
-                    
                     if fund_data.get('Revenue_Trend'):
-                        st.caption(f"매출 추이: {' → '.join(fund_data['Revenue_Trend'])}")
+                        st.caption(f"매출 추이: {' -> '.join(fund_data['Revenue_Trend'])}")
             
             st.write("---")
             with st.expander("📝 상세 분석 내용 보기", expanded=True):
@@ -419,11 +404,9 @@ if selected_code:
                 df = sanitize_for_chart(df)
                 fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.7, 0.3], subplot_titles=(f"{title} 주가", "거래량"))
                 fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='캔들'), row=1, col=1)
-                
-                if title == '일봉': # 일봉에만 이평선 표시
+                if title == '일봉':
                     fig.add_trace(go.Scatter(x=df.index, y=df['ma20'], line=dict(color='blue', width=1), name='20일선'), row=1, col=1)
                     fig.add_trace(go.Scatter(x=df.index, y=df['ma60'], line=dict(color='green', width=1), name='60일선'), row=1, col=1)
-                
                 fig.add_trace(go.Bar(x=df.index, y=df['Volume'], name='거래량'), row=2, col=1)
                 fig.update_layout(height=600, xaxis_rangeslider_visible=False, showlegend=False)
                 return fig
